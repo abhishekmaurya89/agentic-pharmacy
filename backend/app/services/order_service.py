@@ -1,0 +1,203 @@
+from datetime import datetime, timezone
+
+from bson import ObjectId
+from fastapi import HTTPException
+
+from backend.app.db.mongodb import db
+from backend.app.services.inventory_service import check_inventory
+from backend.app.services.prescription_service import check_prescription
+
+
+def validate_object_id(value: str, field_name: str) -> ObjectId:
+    """
+    Validate a MongoDB ObjectId and return the ObjectId instance.
+    """
+    if not ObjectId.is_valid(value):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field_name}"
+        )
+
+    return ObjectId(value)
+
+
+async def execute_order(
+    patient_id: str,
+    medicine_id: str,
+    quantity: int
+):
+    if quantity <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Quantity must be greater than zero"
+        )
+
+    if quantity > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum order quantity is 100"
+        )
+    patient_object_id = validate_object_id(
+        patient_id,
+        "patient_id"
+    )
+
+    medicine_object_id = validate_object_id(
+        medicine_id,
+        "medicine_id"
+    )
+
+    patient = await db.users.find_one({
+        "_id": patient_object_id,
+        "role": "patient"
+    })
+
+    if not patient:
+        raise HTTPException(
+            status_code=404,
+            detail="Patient not found"
+        )
+
+    medicine = await db.medicines.find_one({
+        "_id": medicine_object_id
+    })
+
+    if not medicine:
+        raise HTTPException(
+            status_code=404,
+            detail="Medicine not found"
+        )
+
+    inventory = await check_inventory(
+        medicine_id,
+        quantity
+    )
+
+    if not inventory["allowed"]:
+        raise HTTPException(
+            status_code=400,
+            detail=inventory
+        )
+
+    prescription = await check_prescription(
+        patient_id,
+        medicine_id,
+        quantity
+    )
+
+    if not prescription["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail=prescription
+        )
+
+    
+    result = await db.medicines.update_one(
+        {
+            "_id": medicine_object_id,
+            "stock": {
+                "$gte": quantity
+            }
+        },
+        {
+            "$inc": {
+                "stock": -quantity
+            }
+        }
+    )
+
+    if result.modified_count != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Inventory changed. Please try again."
+        )
+
+   
+    total_amount = medicine["unit_price"] * quantity
+
+
+
+    order = {
+        "patient_id": patient_object_id,
+        "items": [
+            {
+                "medicine_id": medicine_object_id,
+                "quantity": quantity,
+                "unit_price": medicine["unit_price"]
+            }
+        ],
+        "total_amount": total_amount,
+        "status": "confirmed",
+        "created_at": datetime.now(timezone.utc)
+    }
+
+    try:
+        order_result = await db.orders.insert_one(order)
+
+    except Exception:
+        # IMPORTANT:
+        # If order creation fails after stock deduction,
+        # restore the stock.
+        await db.medicines.update_one(
+            {
+                "_id": medicine_object_id
+            },
+            {
+                "$inc": {
+                    "stock": quantity
+                }
+            }
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Order creation failed. Inventory restored."
+        )
+
+
+    if medicine["prescription_required"]:
+        prescription_update = await db.prescriptions.update_one(
+            {
+                "patient_id": patient_object_id,
+                "medicine_id": medicine_object_id,
+                "status": "active",
+                "remaining_quantity": {
+                    "$gte": quantity
+                }
+            },
+            {
+                "$inc": {
+                    "remaining_quantity": -quantity
+                }
+            }
+        )
+
+        if prescription_update.modified_count != 1:
+            await db.orders.delete_one({
+                "_id": order_result.inserted_id
+            })
+
+            await db.medicines.update_one(
+                {
+                    "_id": medicine_object_id
+                },
+                {
+                    "$inc": {
+                        "stock": quantity
+                    }
+                }
+            )
+
+            raise HTTPException(
+                status_code=409,
+                detail="Prescription changed. Order cancelled."
+            )
+    return {
+        "order_id": str(order_result.inserted_id),
+        "patient_id": patient_id,
+        "medicine_id": medicine_id,
+        "medicine_name": medicine["name"],
+        "quantity": quantity,
+        "total_amount": total_amount,
+        "status": "confirmed"
+    }
