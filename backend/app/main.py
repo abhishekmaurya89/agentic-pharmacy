@@ -6,6 +6,7 @@ from backend.app.db.mongodb import connect_db, close_db
 from backend.app.api.medicines import router as medicine_router
 from backend.app.api.orders import router as order_router
 from backend.app.api.auth import router as auth_router
+from backend.app.api.agent import router as agent_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +26,7 @@ app = FastAPI(
 app.include_router(medicine_router)
 app.include_router(order_router)
 app.include_router(auth_router)
+app.include_router(agent_router)
 
 @app.get("/")
 async def root():

@@ -7,9 +7,9 @@ class Settings(BaseSettings):
 
     jwt_secret: str
 
-    openai_api_key: str | None = None
-    langchain_api_key: str | None = None
+    gemini_api_key: str | None = None
 
+    langchain_api_key: str | None = None
     langchain_tracing_v2: bool = False
     langchain_project: str = "agentic-pharmacy"
 
