@@ -1,6 +1,6 @@
 from backend.app.agent.state import PharmacyState
 from backend.app.agent.llm import extract_medication_request
-
+from langgraph.types import interrupt
 
 async def extract_intent(
     state: PharmacyState
@@ -180,4 +180,119 @@ async def execute_order_node(
             f"Quantity: {result['quantity']}\n"
             f"Total: ₹{result['total_amount']:.2f}"
         )
+    }
+async def medicine_information(
+    state: PharmacyState
+) -> PharmacyState:
+
+    medicine_name = state.get("medicine_name")
+
+    if not medicine_name:
+        return {
+            **state,
+            "response": "Which medicine would you like information about?"
+        }
+
+    medicines = await search_medicines(
+        medicine_name
+    )
+
+    if not medicines:
+        return {
+            **state,
+            "response": (
+                f"I couldn't find information for "
+                f"{medicine_name}."
+            )
+        }
+
+    medicine = medicines[0]
+
+    return {
+        **state,
+        "response": (
+            f"{medicine['name']} "
+            f"{medicine.get('strength', '')} "
+            f"is available in our pharmacy."
+        )
+    }
+async def unknown_request(
+    state: PharmacyState
+) -> PharmacyState:
+
+    return {
+        **state,
+        "response": (
+            "I'm sorry, I couldn't understand your request. "
+            "You can ask me to order or refill a medicine."
+        )
+    }
+def route_inventory(state: PharmacyState):
+
+    result = state.get("inventory_result")
+
+    if not result or not result.get("allowed"):
+        return "reject"
+
+    return "continue"
+
+def route_prescription(state: PharmacyState):
+
+    result = state.get("prescription_result")
+
+    if not result or not result.get("allowed"):
+        return "reject"
+
+    return "continue"
+
+async def reject_order(
+    state: PharmacyState
+) -> PharmacyState:
+
+    return {
+        **state,
+        "order_ready": False
+    }
+
+
+
+async def human_approval(
+    state: PharmacyState
+) -> PharmacyState:
+
+    medicine = state["medicine"]
+    quantity = state["quantity"]
+
+    total = medicine["unit_price"] * quantity
+
+    approval = interrupt({
+        "type": "order_confirmation",
+        "message": "Please confirm your order.",
+        "medicine": medicine["name"],
+        "strength": medicine.get("strength"),
+        "quantity": quantity,
+        "total_amount": total
+    })
+
+    confirmed = (
+        isinstance(approval, dict)
+        and approval.get("confirmed") is True
+    )
+
+    if not confirmed:
+        return {
+            **state,
+            "confirmed": False,
+            "order_ready": False,
+            "order_result": None,
+            "response": (
+                "Order cancelled. "
+                "No medication was ordered and "
+                "your inventory was not changed."
+            )
+        }
+
+    return {
+        **state,
+        "confirmed": True
     }

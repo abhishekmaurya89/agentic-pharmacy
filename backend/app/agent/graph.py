@@ -1,21 +1,77 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from backend.app.agent.state import PharmacyState
+
+
+checkpointer_context = AsyncSqliteSaver.from_conn_string(
+    "langgraph_checkpoints.sqlite"
+)
+
 from backend.app.agent.nodes import (
     extract_intent,
     resolve_medicine,
     check_inventory_node,
     check_prescription_node,
     prepare_order,
-    execute_order_node
+    human_approval,
+    execute_order_node,
+    medicine_information,
+    unknown_request,
+    reject_order
 )
 
+def route_intent(state: PharmacyState):
 
-def build_pharmacy_graph():
+    intent = state.get("intent")
+
+    if intent == "order_medicine":
+        return "order"
+
+    if intent == "medicine_information":
+        return "information"
+
+    return "unknown"
+
+
+def route_medicine(state: PharmacyState):
+
+    if not state.get("medicine_id"):
+        return "reject"
+
+    return "continue"
+
+
+def route_inventory(state: PharmacyState):
+
+    result = state.get("inventory_result")
+
+    if not result or not result.get("allowed"):
+        return "reject"
+
+    return "continue"
+
+
+def route_prescription(state: PharmacyState):
+
+    result = state.get("prescription_result")
+
+    if not result or not result.get("allowed"):
+        return "reject"
+
+    return "continue"
+
+def route_approval(state: PharmacyState):
+
+    if state.get("confirmed") is True:
+        return "execute"
+
+    return "cancel"
+
+async def build_pharmacy_graph():
 
     graph = StateGraph(PharmacyState)
 
-    # Nodes
     graph.add_node(
         "extract_intent",
         extract_intent
@@ -42,42 +98,114 @@ def build_pharmacy_graph():
     )
 
     graph.add_node(
+        "human_approval",
+        human_approval
+    )
+
+    graph.add_node(
         "execute_order",
         execute_order_node
     )
 
-    # Flow
+    graph.add_node(
+        "medicine_information",
+        medicine_information
+    )
+
+    graph.add_node(
+        "unknown_request",
+        unknown_request
+    )
+
+    graph.add_node(
+        "reject_order",
+        reject_order
+    )
+
+    # START
     graph.add_edge(
         START,
         "extract_intent"
     )
 
-    graph.add_edge(
+    # Intent
+    graph.add_conditional_edges(
         "extract_intent",
-        "resolve_medicine"
+        route_intent,
+        {
+            "order": "resolve_medicine",
+            "information": "medicine_information",
+            "unknown": "unknown_request"
+        }
     )
 
-    graph.add_edge(
+    # Medicine
+    graph.add_conditional_edges(
         "resolve_medicine",
-        "check_inventory"
+        route_medicine,
+        {
+            "continue": "check_inventory",
+            "reject": "reject_order"
+        }
     )
 
-    graph.add_edge(
+    # Inventory
+    graph.add_conditional_edges(
         "check_inventory",
-        "check_prescription"
+        route_inventory,
+        {
+            "continue": "check_prescription",
+            "reject": "reject_order"
+        }
     )
 
-    graph.add_edge(
+    # Prescription
+    graph.add_conditional_edges(
         "check_prescription",
-        "prepare_order"
+        route_prescription,
+        {
+            "continue": "prepare_order",
+            "reject": "reject_order"
+        }
     )
 
+    # Prepare
     graph.add_edge(
         "prepare_order",
+        "human_approval"
+    )
+
+    # Approval
+    graph.add_conditional_edges(
+        "human_approval",
+        route_approval,
+        {
+            "execute": "execute_order",
+            "cancel": END
+        }
+    )
+
+    # Execution
+    graph.add_edge(
+        "execute_order",
         END
     )
 
-    return graph.compile()
+    # Other terminal paths
+    graph.add_edge(
+        "medicine_information",
+        END
+    )
 
+    graph.add_edge(
+        "unknown_request",
+        END
+    )
 
-pharmacy_graph = build_pharmacy_graph()
+    graph.add_edge(
+        "reject_order",
+        END
+    )
+
+    return graph
+

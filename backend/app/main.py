@@ -7,12 +7,26 @@ from backend.app.api.medicines import router as medicine_router
 from backend.app.api.orders import router as order_router
 from backend.app.api.auth import router as auth_router
 from backend.app.api.agent import router as agent_router
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+from backend.app.agent.graph import build_pharmacy_graph
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
     await connect_db()
 
-    yield
+    async with AsyncSqliteSaver.from_conn_string(
+        "langgraph_checkpoints.sqlite"
+    ) as checkpointer:
+
+        app.state.pharmacy_graph = (
+            await build_pharmacy_graph()
+        ).compile(
+            checkpointer=checkpointer
+        )
+
+        yield
 
     await close_db()
 

@@ -3,11 +3,11 @@ from typing import TypedDict, Any
 
 class PharmacyState(TypedDict, total=False):
 
-    # Conversation
+    # User / conversation
     user_message: str
     user_id: str
 
-    # Extracted intent
+    # Intent
     intent: str
     medicine_name: str | None
     quantity: int | None
@@ -15,7 +15,7 @@ class PharmacyState(TypedDict, total=False):
     clarification_needed: bool
     clarification_question: str | None
 
-    # Resolved medicine
+    # Medicine
     medicine_id: str | None
     medicine: dict[str, Any] | None
 
@@ -28,7 +28,8 @@ class PharmacyState(TypedDict, total=False):
     confirmation_required: bool
     confirmed: bool
 
+    # Result
     order_result: dict[str, Any] | None
 
-    # Final response
+    # Response
     response: str
