@@ -13,13 +13,24 @@ from backend.app.agent.nodes import (
     resolve_medicine,
     check_inventory_node,
     check_prescription_node,
+    assess_risk,
     prepare_order,
     human_approval,
+    pharmacist_review,
     execute_order_node,
     medicine_information,
     unknown_request,
-    reject_order
+    reject_order,
 )
+
+def route_risk(state: PharmacyState):
+
+    risk = state.get("risk_level")
+
+    if risk == "high":
+        return "pharmacist"
+
+    return "patient"
 
 def route_intent(state: PharmacyState):
 
@@ -33,6 +44,12 @@ def route_intent(state: PharmacyState):
 
     return "unknown"
 
+def route_pharmacist(state: PharmacyState):
+
+    if state.get("pharmacist_approved") is True:
+        return "execute"
+
+    return "reject"
 
 def route_medicine(state: PharmacyState):
 
@@ -68,7 +85,7 @@ def route_approval(state: PharmacyState):
 
     return "cancel"
 
-async def build_pharmacy_graph():
+def build_pharmacy_graph():
 
     graph = StateGraph(PharmacyState)
 
@@ -116,12 +133,20 @@ async def build_pharmacy_graph():
         "unknown_request",
         unknown_request
     )
-
+    
     graph.add_node(
         "reject_order",
         reject_order
     )
 
+    graph.add_node(
+        "assess_risk",
+        assess_risk
+    )
+    graph.add_node(
+        "pharmacist_review",
+        pharmacist_review
+    )
     # START
     graph.add_edge(
         START,
@@ -160,15 +185,18 @@ async def build_pharmacy_graph():
     )
 
     # Prescription
-    graph.add_conditional_edges(
-        "check_prescription",
-        route_prescription,
-        {
-            "continue": "prepare_order",
-            "reject": "reject_order"
-        }
+    graph.add_edge(
+    "check_prescription",
+    "assess_risk"
     )
-
+    graph.add_conditional_edges(
+    "assess_risk",
+    route_risk,
+    {
+        "patient": "prepare_order",
+        "pharmacist": "pharmacist_review"
+    }
+    )
     # Prepare
     graph.add_edge(
         "prepare_order",
@@ -201,7 +229,15 @@ async def build_pharmacy_graph():
         "unknown_request",
         END
     )
-
+    graph.add_conditional_edges(
+            "pharmacist_review",
+            route_pharmacist,
+            {
+                "execute": "execute_order",
+                "reject": END
+            }
+        )
+    
     graph.add_edge(
         "reject_order",
         END

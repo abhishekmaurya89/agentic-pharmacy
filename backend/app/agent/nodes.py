@@ -1,6 +1,115 @@
 from backend.app.agent.state import PharmacyState
 from backend.app.agent.llm import extract_medication_request
 from langgraph.types import interrupt
+from backend.app.services.order_service import execute_order
+
+from backend.app.services.risk_service import (
+    calculate_order_risk
+)
+from backend.app.services.interaction_service import (
+    check_drug_interactions
+)
+
+
+async def check_interactions_node(
+    state: PharmacyState
+) -> PharmacyState:
+
+    result = await check_drug_interactions(
+        patient_id=state["user_id"],
+        medicine_id=state["medicine_id"]
+    )
+
+    if result["interaction_found"]:
+
+        return {
+            **state,
+            "interaction_result": result,
+            "risk_level": "high",
+            "risk_reasons": [
+                *state.get("risk_reasons", []),
+                "Potential drug interaction detected"
+            ],
+            "response": (
+                "A potential medication interaction was detected. "
+                "This order requires pharmacist review."
+            )
+        }
+
+    return {
+        **state,
+        "interaction_result": result
+    }
+
+async def assess_risk(
+    state: PharmacyState
+) -> PharmacyState:
+
+    result = calculate_order_risk(
+        medicine=state["medicine"],
+        quantity=state["quantity"],
+        prescription_result=state[
+            "prescription_result"
+        ]
+    )
+
+    return {
+        **state,
+        "risk_level": result["risk_level"],
+        "risk_score": result["risk_score"],
+        "risk_reasons": result["risk_reasons"]
+    }
+
+async def pharmacist_review(
+    state: PharmacyState
+) -> PharmacyState:
+
+    medicine = state["medicine"]
+
+    review_request = interrupt({
+        "type": "pharmacist_review",
+        "message": "This order requires pharmacist approval.",
+        "medicine": medicine["name"],
+        "strength": medicine.get("strength"),
+        "quantity": state["quantity"],
+        "risk_level": state.get("risk_level"),
+        "risk_score": state.get("risk_score"),
+        "risk_reasons": state.get("risk_reasons", [])
+    })
+
+    approved = (
+        isinstance(review_request, dict)
+        and review_request.get("approved") is True
+    )
+
+    pharmacist_id = review_request.get(
+        "pharmacist_id"
+    )
+
+    if not approved:
+
+        return {
+            **state,
+            "pharmacist_approved": False,
+            "pharmacist_id": pharmacist_id,
+            "order_ready": False,
+            "order_result": None,
+            "rejection_reason": review_request.get(
+                "reason",
+                "Pharmacist rejected the order."
+            ),
+            "response": (
+                "Order rejected by the pharmacist. "
+                "No medication was ordered."
+            )
+        }
+
+    return {
+        **state,
+        "pharmacist_approved": True,
+        "pharmacist_id": pharmacist_id
+    }
+
 
 async def extract_intent(
     state: PharmacyState
@@ -143,21 +252,27 @@ async def prepare_order(
         state["quantity"]
     )
 
+    risk_level = state.get(
+        "risk_level",
+        "low"
+    )
+
     return {
         **state,
         "order_ready": True,
         "confirmation_required": True,
+        "approval_type": "patient",
         "confirmed": False,
         "response": (
             f"Order summary:\n\n"
             f"Medicine: {medicine['name']}\n"
             f"Strength: {medicine.get('strength', '')}\n"
             f"Quantity: {state['quantity']}\n"
-            f"Total: ₹{total:.2f}\n\n"
+            f"Total: ₹{total:.2f}\n"
+            f"Risk level: {risk_level}\n\n"
             f"Would you like to confirm this order?"
         )
     }
-from backend.app.services.order_service import execute_order
 
 
 async def execute_order_node(

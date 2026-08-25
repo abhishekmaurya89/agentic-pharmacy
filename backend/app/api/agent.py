@@ -1,16 +1,16 @@
-from fastapi import APIRouter, Depends, Request
-
-from backend.app.core.auth import get_current_user
-from backend.app.agent.state import PharmacyState
-from langgraph.types import Command
 import uuid
 
-thread_id = str(uuid.uuid4())
+from fastapi import APIRouter, Depends, Request
+
+from backend.app.agent.state import PharmacyState
+from backend.app.core.auth import get_current_user
+from langgraph.types import Command
 
 router = APIRouter(
     prefix="/agent",
     tags=["Agent"]
 )
+
 
 @router.post("/chat")
 async def chat(
@@ -29,9 +29,9 @@ async def chat(
         }
     }
 
-    initial_state = {
+    initial_state: PharmacyState = {
         "user_message": message,
-        "user_id": current_user["id"]
+        "user_id": current_user["id"],
     }
 
     result = await graph.ainvoke(
@@ -39,18 +39,22 @@ async def chat(
         config
     )
 
+    interrupts = result.get(
+        "__interrupt__",
+        []
+    )
+
+    interrupt_data = None
+
+    if interrupts:
+        interrupt_data = interrupts[0].value
+
     return {
         "thread_id": thread_id,
         "response": result.get("response"),
-        "state": {
-            "intent": result.get("intent"),
-            "medicine_name": result.get("medicine_name"),
-            "quantity": result.get("quantity"),
-            "medicine_id": result.get("medicine_id"),
-            "order_ready": result.get("order_ready")
-        }
+        "interrupt": interrupt_data,
+        "order_result": result.get("order_result"),
     }
-
 @router.post("/confirm")
 async def confirm_order(
     request: Request,
