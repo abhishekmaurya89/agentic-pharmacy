@@ -8,6 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from backend.app.db.mongodb import connect_db, close_db
+from backend.app.config import settings
 
 from backend.app.api.medicines import router as medicine_router
 from backend.app.api.orders import router as order_router
@@ -82,7 +83,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173"
+        settings.frontend_url
     ],
     allow_credentials=True,
     allow_methods=["*"],
