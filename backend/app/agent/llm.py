@@ -1,24 +1,17 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from backend.app.config import settings
 from backend.app.agent.schemas import MedicationRequest
-
+from backend.app.config import settings
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.5-flash-lite",
-    google_api_key=settings.gemini_api_key,
-    temperature=0
+    model="gemini-3.5-flash-lite", google_api_key=settings.gemini_api_key, temperature=0
 )
 
 
-structured_llm = llm.with_structured_output(
-    MedicationRequest
-)
+structured_llm = llm.with_structured_output(MedicationRequest)
 
 
-async def extract_medication_request(
-    user_message: str
-) -> MedicationRequest:
+async def extract_medication_request(user_message: str) -> MedicationRequest:
 
     system_prompt = """
 You are the intent extraction component of a pharmacy AI system.
@@ -77,10 +70,8 @@ Remember:
 Safety validation happens outside the LLM.
 """
 
-
-    response = await structured_llm.ainvoke([
-        ("system", system_prompt),
-        ("human", user_message)
-    ])
+    response = await structured_llm.ainvoke(
+        [("system", system_prompt), ("human", user_message)]
+    )
 
     return response

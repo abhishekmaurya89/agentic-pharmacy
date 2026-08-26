@@ -4,22 +4,18 @@ from fastapi import (
     HTTPException,
     Request,
 )
-
-from pydantic import BaseModel
 from langgraph.types import Command
+from pydantic import BaseModel
 
 from backend.app.core.auth import get_current_user
-
+from backend.app.services.order_service import (
+    update_pending_order_status,
+)
 from backend.app.services.pharmacist_service import (
     get_pending_reviews,
     get_review_by_thread_id,
     update_pharmacist_review,
 )
-
-from backend.app.services.order_service import (
-    update_pending_order_status,
-)
-
 
 router = APIRouter(
     prefix="/pharmacist",
@@ -33,9 +29,7 @@ class PharmacistReviewRequest(BaseModel):
     rejection_reason: str | None = None
 
 
-def require_pharmacist(
-    current_user: dict
-):
+def require_pharmacist(current_user: dict):
     if current_user.get("role") != "pharmacist":
         raise HTTPException(
             status_code=403,
@@ -47,9 +41,7 @@ def require_pharmacist(
 
 @router.get("/pending")
 async def pending_reviews(
-    current_user: dict = Depends(
-        get_current_user
-    ),
+    current_user: dict = Depends(get_current_user),
 ):
     require_pharmacist(current_user)
 
@@ -60,19 +52,13 @@ async def pending_reviews(
 async def review_order(
     request: Request,
     body: PharmacistReviewRequest,
-    current_user: dict = Depends(
-        get_current_user
-    ),
+    current_user: dict = Depends(get_current_user),
 ):
     require_pharmacist(current_user)
 
     graph = request.app.state.pharmacy_graph
 
-    config = {
-        "configurable": {
-            "thread_id": body.thread_id
-        }
-    }
+    config = {"configurable": {"thread_id": body.thread_id}}
 
     result = await graph.ainvoke(
         Command(
@@ -84,10 +70,7 @@ async def review_order(
         config,
     )
 
-  
-    review = await get_review_by_thread_id(
-    body.thread_id
-)
+    review = await get_review_by_thread_id(body.thread_id)
 
     if not review:
         raise HTTPException(
@@ -111,10 +94,6 @@ async def review_order(
     )
 
     return {
-        "response": result.get(
-            "response"
-        ),
-        "order_result": result.get(
-            "order_result"
-        ),
+        "response": result.get("response"),
+        "order_result": result.get("order_result"),
     }

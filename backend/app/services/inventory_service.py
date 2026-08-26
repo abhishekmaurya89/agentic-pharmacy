@@ -5,42 +5,33 @@ from backend.app.db.mongodb import db
 
 
 async def create_medicine(data: dict):
-    existing = await db.medicines.find_one({
-        "name": data["name"],
-        "strength": data.get("strength"),
-        "form": data.get("form")
-    })
+    existing = await db.medicines.find_one(
+        {
+            "name": data["name"],
+            "strength": data.get("strength"),
+            "form": data.get("form"),
+        }
+    )
 
     if existing:
-        raise HTTPException(
-            status_code=409,
-            detail="Medicine already exists"
-        )
+        raise HTTPException(status_code=409, detail="Medicine already exists")
 
     result = await db.medicines.insert_one(data)
 
     return {
         "id": str(result.inserted_id),
-        **{key: value for key, value in data.items() if key != "_id"}
+        **{key: value for key, value in data.items() if key != "_id"},
     }
 
 
 async def get_medicine(medicine_id: str):
     if not ObjectId.is_valid(medicine_id):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid medicine ID"
-        )
+        raise HTTPException(status_code=400, detail="Invalid medicine ID")
 
-    medicine = await db.medicines.find_one({
-        "_id": ObjectId(medicine_id)
-    })
+    medicine = await db.medicines.find_one({"_id": ObjectId(medicine_id)})
 
     if not medicine:
-        raise HTTPException(
-            status_code=404,
-            detail="Medicine not found"
-        )
+        raise HTTPException(status_code=404, detail="Medicine not found")
 
     medicine["id"] = str(medicine.pop("_id"))
 
@@ -48,12 +39,7 @@ async def get_medicine(medicine_id: str):
 
 
 async def search_medicines(name: str):
-    cursor = db.medicines.find({
-        "name": {
-            "$regex": name,
-            "$options": "i"
-        }
-    })
+    cursor = db.medicines.find({"name": {"$regex": name, "$options": "i"}})
 
     medicines = []
 
@@ -62,6 +48,8 @@ async def search_medicines(name: str):
         medicines.append(medicine)
 
     return medicines
+
+
 async def check_inventory(
     medicine_id: str,
     quantity: int,
@@ -78,14 +66,9 @@ async def check_inventory(
             "reason": "INVALID_QUANTITY",
         }
 
-    medicine = await get_medicine(
-        medicine_id
-    )
+    medicine = await get_medicine(medicine_id)
 
-    available = medicine.get(
-        "stock",
-        0
-    )
+    available = medicine.get("stock", 0)
 
     if available < quantity:
         return {

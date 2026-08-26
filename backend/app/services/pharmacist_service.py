@@ -12,36 +12,24 @@ async def update_pharmacist_review(
     rejection_reason: str | None = None,
 ):
     update_data = {
-        "status": (
-            "approved"
-            if approved
-            else "rejected"
-        ),
-        "reviewed_by": ObjectId(
-            pharmacist_id
-        ),
-        "reviewed_at": datetime.now(
-            timezone.utc
-        ),
+        "status": ("approved" if approved else "rejected"),
+        "reviewed_by": ObjectId(pharmacist_id),
+        "reviewed_at": datetime.now(timezone.utc),
     }
 
     if not approved:
-        update_data["rejection_reason"] = (
-            rejection_reason
-            or "Rejected by pharmacist"
-        )
+        update_data["rejection_reason"] = rejection_reason or "Rejected by pharmacist"
 
     result = await db.pharmacist_reviews.update_one(
         {
             "thread_id": thread_id,
             "status": "pending",
         },
-        {
-            "$set": update_data
-        },
+        {"$set": update_data},
     )
 
     return result.modified_count == 1
+
 
 async def create_pharmacist_review(
     thread_id: str,
@@ -55,33 +43,25 @@ async def create_pharmacist_review(
 ):
     review = {
         "thread_id": thread_id,
-
         "patient_id": ObjectId(patient_id),
         "medicine_id": ObjectId(medicine_id),
-
         "medicine_name": medicine["name"],
         "strength": medicine.get("strength"),
-
         "quantity": quantity,
-
         "risk_level": risk_level,
         "risk_score": risk_score,
         "risk_reasons": risk_reasons,
-
         "status": "pending",
-
         "created_at": datetime.now(timezone.utc),
-
         "reviewed_at": None,
         "reviewed_by": None,
         "rejection_reason": None,
     }
 
-    result = await db.pharmacist_reviews.insert_one(
-        review
-    )
+    result = await db.pharmacist_reviews.insert_one(review)
 
     return str(result.inserted_id)
+
 
 async def get_thread_status(
     thread_id: str,
@@ -104,32 +84,16 @@ async def get_thread_status(
             "status",
             "pending",
         ),
-        "medicine_name": review.get(
-            "medicine_name"
-        ),
-        "strength": review.get(
-            "strength"
-        ),
-        "quantity": review.get(
-            "quantity"
-        ),
-        "risk_level": review.get(
-            "risk_level"
-        ),
-        "risk_score": review.get(
-            "risk_score"
-        ),
-        "risk_reasons": review.get(
-            "risk_reasons",
-            []
-        ),
-        "rejection_reason": review.get(
-            "rejection_reason"
-        ),
+        "medicine_name": review.get("medicine_name"),
+        "strength": review.get("strength"),
+        "quantity": review.get("quantity"),
+        "risk_level": review.get("risk_level"),
+        "risk_score": review.get("risk_score"),
+        "risk_reasons": review.get("risk_reasons", []),
+        "rejection_reason": review.get("rejection_reason"),
     }
 
     if review.get("status") == "approved":
-
         order = await db.orders.find_one(
             {
                 "thread_id": thread_id,
@@ -137,26 +101,19 @@ async def get_thread_status(
         )
 
         if order:
-            result["order_id"] = str(
-                order["_id"]
-            )
+            result["order_id"] = str(order["_id"])
 
             result["status"] = order.get(
                 "status",
                 "confirmed",
             )
 
-            result["total_amount"] = (
-                order.get(
-                    "total_amount"
-                )
-            )
+            result["total_amount"] = order.get("total_amount")
 
     return result
 
-async def get_review_by_thread_id(
-    thread_id: str
-):
+
+async def get_review_by_thread_id(thread_id: str):
     review = await db.pharmacist_reviews.find_one(
         {
             "thread_id": thread_id,
@@ -168,25 +125,17 @@ async def get_review_by_thread_id(
         return None
 
     review["_id"] = str(review["_id"])
-    review["patient_id"] = str(
-        review["patient_id"]
-    )
-    review["medicine_id"] = str(
-        review["medicine_id"]
-    )
+    review["patient_id"] = str(review["patient_id"])
+    review["medicine_id"] = str(review["medicine_id"])
 
     return review
 
+
 async def get_pending_reviews():
-    reviews = await db.pharmacist_reviews.find(
-        {
-            "status": "pending"
-        }
-    ).sort(
-        "created_at",
-        1
-    ).to_list(
-        length=100
+    reviews = (
+        await db.pharmacist_reviews.find({"status": "pending"})
+        .sort("created_at", 1)
+        .to_list(length=100)
     )
 
     for review in reviews:

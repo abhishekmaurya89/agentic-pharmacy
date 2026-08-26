@@ -1,33 +1,24 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Request
+from langgraph.types import Command
 
 from backend.app.agent.state import PharmacyState
 from backend.app.core.auth import get_current_user
-from langgraph.types import Command
 
-router = APIRouter(
-    prefix="/agent",
-    tags=["Agent"]
-)
+router = APIRouter(prefix="/agent", tags=["Agent"])
 
 
 @router.post("/chat")
 async def chat(
-    request: Request,
-    message: str,
-    current_user: dict = Depends(get_current_user)
+    request: Request, message: str, current_user: dict = Depends(get_current_user)
 ):
 
     graph = request.app.state.pharmacy_graph
 
     thread_id = str(uuid.uuid4())
 
-    config = {
-        "configurable": {
-            "thread_id": thread_id
-        }
-    }
+    config = {"configurable": {"thread_id": thread_id}}
 
     initial_state: PharmacyState = {
         "user_message": message,
@@ -35,15 +26,9 @@ async def chat(
         "thread_id": thread_id,
     }
 
-    result = await graph.ainvoke(
-        initial_state,
-        config
-    )
+    result = await graph.ainvoke(initial_state, config)
 
-    interrupts = result.get(
-        "__interrupt__",
-        []
-    )
+    interrupts = result.get("__interrupt__", [])
 
     interrupt_data = None
 
@@ -56,22 +41,20 @@ async def chat(
         "interrupt": interrupt_data,
         "order_result": result.get("order_result"),
     }
+
+
 @router.post("/confirm")
 async def confirm_order(
     request: Request,
     thread_id: str,
     confirmed: bool,
     approval_type: str = "order",
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
 
     graph = request.app.state.pharmacy_graph
 
-    config = {
-        "configurable": {
-            "thread_id": thread_id
-        }
-    }
+    config = {"configurable": {"thread_id": thread_id}}
 
     # Use different field names based on approval type
     if approval_type == "pharmacist":
@@ -79,14 +62,9 @@ async def confirm_order(
     else:
         resume_data = {"confirmed": confirmed}
 
-    result = await graph.ainvoke(
-        Command(
-            resume=resume_data
-        ),
-        config
-    )
+    result = await graph.ainvoke(Command(resume=resume_data), config)
 
     return {
         "response": result.get("response"),
-        "order_result": result.get("order_result")
+        "order_result": result.get("order_result"),
     }
