@@ -54,6 +54,7 @@ export default function PatientDashboard() {
 
     try {
       const data = await sendAgentMessage(userMessage);
+      console.log("AGENT RESPONSE:", data);
 
       if (data.response) {
         setMessages((prev) => [
@@ -186,7 +187,7 @@ export default function PatientDashboard() {
 
         {/* Chat */}
 
-        <div className="min-h-[500px] rounded-2xl border bg-white shadow-sm">
+        <div className="min-h-125 rounded-2xl border bg-white shadow-sm">
 
           <div className="space-y-5 p-6">
 
