@@ -185,10 +185,15 @@ def build_pharmacy_graph():
     )
 
     # Prescription
-    graph.add_edge(
-    "check_prescription",
-    "assess_risk"
+    graph.add_conditional_edges(
+        "check_prescription",
+        route_prescription,
+        {
+            "continue": "assess_risk",
+            "reject": "reject_order"
+        }
     )
+
     graph.add_conditional_edges(
     "assess_risk",
     route_risk,

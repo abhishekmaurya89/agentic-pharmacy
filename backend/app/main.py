@@ -20,6 +20,9 @@ from backend.app.jobs.refill_job import (
     run_refill_predictions
 )
 
+from backend.app.api.pharmacist import (
+    router as pharmacist_router
+)
 
 scheduler = AsyncIOScheduler()
 
@@ -27,15 +30,7 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    # -----------------------------
-    # Database
-    # -----------------------------
-
     await connect_db()
-
-    # -----------------------------
-    # LangGraph Checkpointer
-    # -----------------------------
 
     async with AsyncSqliteSaver.from_conn_string(
         "langgraph_checkpoints.sqlite"
@@ -95,6 +90,10 @@ app.add_middleware(
 )
 
 # API Routers
+
+app.include_router(
+    pharmacist_router
+)
 
 app.include_router(
     medicine_router

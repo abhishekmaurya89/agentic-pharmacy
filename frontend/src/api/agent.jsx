@@ -29,7 +29,8 @@ export const sendAgentMessage = async (message) => {
 };
 export const confirmOrder = async (
   threadId,
-  confirmed
+  confirmed,
+  approvalType = "order"
 ) => {
   const response = await API.post(
     "/agent/confirm",
@@ -38,6 +39,7 @@ export const confirmOrder = async (
       params: {
         thread_id: threadId,
         confirmed,
+        approval_type: approvalType,
       },
     }
   );

@@ -2,7 +2,7 @@ from backend.app.agent.state import PharmacyState
 from backend.app.agent.llm import extract_medication_request
 from langgraph.types import interrupt
 from backend.app.services.order_service import execute_order
-
+from backend.app.services.inventory_service import check_inventory
 from backend.app.services.risk_service import (
     calculate_order_risk
 )
@@ -60,56 +60,46 @@ async def assess_risk(
         "risk_reasons": result["risk_reasons"]
     }
 
-async def pharmacist_review(
-    state: PharmacyState
-) -> PharmacyState:
+async def pharmacist_review(state: PharmacyState) -> PharmacyState:
 
     medicine = state["medicine"]
 
-    review_request = interrupt({
+    review_request = {
         "type": "pharmacist_review",
         "message": "This order requires pharmacist approval.",
+        "patient_id": state["user_id"],
+        "medicine_id": state["medicine_id"],
         "medicine": medicine["name"],
         "strength": medicine.get("strength"),
         "quantity": state["quantity"],
         "risk_level": state.get("risk_level"),
         "risk_score": state.get("risk_score"),
-        "risk_reasons": state.get("risk_reasons", [])
-    })
+        "risk_reasons": state.get("risk_reasons", []),
+    }
+
+    review = interrupt(review_request)
 
     approved = (
-        isinstance(review_request, dict)
-        and review_request.get("approved") is True
-    )
-
-    pharmacist_id = review_request.get(
-        "pharmacist_id"
+        isinstance(review, dict)
+        and review.get("approved") is True
     )
 
     if not approved:
-
         return {
             **state,
             "pharmacist_approved": False,
-            "pharmacist_id": pharmacist_id,
             "order_ready": False,
             "order_result": None,
-            "rejection_reason": review_request.get(
-                "reason",
-                "Pharmacist rejected the order."
-            ),
             "response": (
-                "Order rejected by the pharmacist. "
-                "No medication was ordered."
-            )
+                "Order rejected by the pharmacist."
+            ),
         }
 
     return {
         **state,
         "pharmacist_approved": True,
-        "pharmacist_id": pharmacist_id
+        "pharmacist_id": review.get("pharmacist_id"),
     }
-
 
 async def extract_intent(
     state: PharmacyState
@@ -180,7 +170,7 @@ async def resolve_medicine(
         "medicine_id": medicine["id"],
         "medicine": medicine
     }
-from backend.app.services.inventory_service import check_inventory
+
 
 
 async def check_inventory_node(

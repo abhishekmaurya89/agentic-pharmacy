@@ -12,12 +12,17 @@ def calculate_order_risk(
             "Prescription medicine"
         )
 
-    if quantity >= 50:
+    # Quantity-based risk scoring
+    if quantity >= 100:
+        score += 40
+        reasons.append(
+            "Very large requested quantity"
+        )
+    elif quantity >= 50:
         score += 30
         reasons.append(
             "Large requested quantity"
         )
-
     elif quantity >= 30:
         score += 15
         reasons.append(
@@ -45,6 +50,11 @@ def calculate_order_risk(
 
     else:
         risk_level = "low"
+
+    if quantity >= 100:
+        risk_level = "high"
+        if "Very large requested quantity" not in reasons:
+            reasons.append("Very large requested quantity (>=100 units)")
 
     return {
         "risk_level": risk_level,

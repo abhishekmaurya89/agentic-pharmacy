@@ -60,6 +60,7 @@ async def confirm_order(
     request: Request,
     thread_id: str,
     confirmed: bool,
+    approval_type: str = "order",
     current_user: dict = Depends(get_current_user)
 ):
 
@@ -71,11 +72,15 @@ async def confirm_order(
         }
     }
 
+    # Use different field names based on approval type
+    if approval_type == "pharmacist":
+        resume_data = {"approved": confirmed}
+    else:
+        resume_data = {"confirmed": confirmed}
+
     result = await graph.ainvoke(
         Command(
-            resume={
-                "confirmed": confirmed
-            }
+            resume=resume_data
         ),
         config
     )
