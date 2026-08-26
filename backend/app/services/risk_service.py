@@ -1,10 +1,19 @@
 def calculate_order_risk(
     medicine: dict,
     quantity: int,
-    prescription_result: dict
+    prescription_result: dict,
 ):
     score = 0
     reasons = []
+
+    if quantity <= 0:
+        return {
+            "risk_level": "high",
+            "risk_score": 100,
+            "risk_reasons": [
+                "Invalid order quantity"
+            ],
+        }
 
     if medicine.get("prescription_required"):
         score += 30
@@ -12,7 +21,6 @@ def calculate_order_risk(
             "Prescription medicine"
         )
 
-    # Quantity-based risk scoring
     if quantity >= 100:
         score += 40
         reasons.append(
@@ -33,31 +41,29 @@ def calculate_order_risk(
         "remaining_quantity"
     )
 
-    if remaining is not None:
-
-        if quantity >= remaining * 0.75:
+    if remaining is not None and remaining > 0:
+        if quantity > remaining:
+            score += 30
+            reasons.append(
+                "Requested quantity exceeds remaining prescription quantity"
+            )
+        elif quantity >= remaining * 0.75:
             score += 20
             reasons.append(
-                "Large portion of prescription remaining quantity requested"
+                "Large portion of remaining prescription quantity requested"
             )
 
+    score = min(score, 100)
 
     if score >= 50:
         risk_level = "high"
-
     elif score >= 20:
         risk_level = "medium"
-
     else:
         risk_level = "low"
-
-    if quantity >= 100:
-        risk_level = "high"
-        if "Very large requested quantity" not in reasons:
-            reasons.append("Very large requested quantity (>=100 units)")
 
     return {
         "risk_level": risk_level,
         "risk_score": score,
-        "risk_reasons": reasons
+        "risk_reasons": reasons,
     }

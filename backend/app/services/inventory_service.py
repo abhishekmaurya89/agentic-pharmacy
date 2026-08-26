@@ -64,30 +64,40 @@ async def search_medicines(name: str):
     return medicines
 async def check_inventory(
     medicine_id: str,
-    quantity: int
+    quantity: int,
 ):
+    if quantity is None:
+        return {
+            "allowed": False,
+            "reason": "QUANTITY_REQUIRED",
+        }
+
     if quantity <= 0:
         return {
             "allowed": False,
-            "reason": "INVALID_QUANTITY"
+            "reason": "INVALID_QUANTITY",
         }
 
-    medicine = await get_medicine(medicine_id)
+    medicine = await get_medicine(
+        medicine_id
+    )
 
-    available = medicine["stock"]
+    available = medicine.get(
+        "stock",
+        0
+    )
 
     if available < quantity:
         return {
             "allowed": False,
             "reason": "INSUFFICIENT_STOCK",
             "available": available,
-            "requested": quantity
+            "requested": quantity,
         }
 
     return {
         "allowed": True,
         "reason": "STOCK_AVAILABLE",
         "available": available,
-        "requested": quantity
+        "requested": quantity,
     }
-

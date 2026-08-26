@@ -254,35 +254,38 @@ async def resolve_medicine(
         "medicine": medicine
     }
 
+async def check_inventory_node(state):
+    print("CHECK INVENTORY STATE:", state)
 
-
-async def check_inventory_node(
-    state: PharmacyState
-) -> PharmacyState:
-
-    result = await check_inventory(
-        state["medicine_id"],
-        state["quantity"]
+    medicine_id = state.get(
+        "medicine_id"
     )
 
-    if not result["allowed"]:
+    quantity = state.get(
+        "quantity"
+    )
 
-        return {
-            **state,
-            "inventory_result": result,
-            "order_ready": False,
-            "response": (
-                f"Sorry, there isn't enough stock. "
-                f"Available: {result.get('available', 0)}, "
-                f"requested: {result.get('requested', 0)}."
-            )
-        }
+    print(
+        "MEDICINE ID:",
+        medicine_id
+    )
+
+    print(
+        "QUANTITY:",
+        quantity
+    )
+
+    result = await check_inventory(
+        medicine_id,
+        quantity,
+    )
 
     return {
-        **state,
         "inventory_result": result
     }
 
+
+  
 from backend.app.services.prescription_service import (
     check_prescription
 )
