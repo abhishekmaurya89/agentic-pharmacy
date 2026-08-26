@@ -201,3 +201,126 @@ async def execute_order(
         "total_amount": total_amount,
         "status": "confirmed"
     }
+
+
+async def create_pending_order(
+    patient_id: str,
+    medicine_id: str,
+    medicine: dict,
+    quantity: int,
+    risk_level: str,
+    risk_reasons: list[str],
+    thread_id: str,
+):
+    """
+    Create a pending order awaiting pharmacist review.
+    Saves to orders collection with status 'pending_pharmacist_review'.
+    """
+    patient_object_id = validate_object_id(
+        patient_id,
+        "patient_id"
+    )
+
+    medicine_object_id = validate_object_id(
+        medicine_id,
+        "medicine_id"
+    )
+
+    total_amount = medicine["unit_price"] * quantity
+
+    pending_order = {
+        "thread_id": thread_id,
+        "patient_id": patient_object_id,
+        "items": [
+            {
+                "medicine_id": medicine_object_id,
+                "quantity": quantity,
+                "unit_price": medicine["unit_price"],
+                "medicine_name": medicine["name"],
+                "strength": medicine.get("strength"),
+            }
+        ],
+        "total_amount": total_amount,
+        "status": "pending_pharmacist_review",
+        "risk_level": risk_level,
+        "risk_reasons": risk_reasons,
+        "created_at": datetime.now(timezone.utc),
+        "reviewed_at": None,
+        "reviewed_by": None,
+    }
+
+    try:
+        result = await db.orders.insert_one(pending_order)
+        return {
+            "order_id": str(result.inserted_id),
+            "patient_id": patient_id,
+            "medicine_id": medicine_id,
+            "medicine_name": medicine["name"],
+            "quantity": quantity,
+            "total_amount": total_amount,
+            "status": "pending_pharmacist_review",
+            "risk_level": risk_level,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create pending order: {str(e)}"
+        )
+
+
+async def update_pending_order_status(
+    thread_id: str,
+    patient_id: str,
+    medicine_id: str,
+    approved: bool,
+    pharmacist_id: str = None,
+    rejection_reason: str = None,
+):
+    """
+    Update pending order status based on pharmacist decision.
+    """
+    patient_object_id = validate_object_id(
+        patient_id,
+        "patient_id"
+    )
+
+    medicine_object_id = validate_object_id(
+        medicine_id,
+        "medicine_id"
+    )
+
+    new_status = "confirmed" if approved else "rejected"
+
+    update_fields = {
+        "status": new_status,
+        "reviewed_at": datetime.now(timezone.utc),
+    }
+
+    if pharmacist_id:
+        update_fields["reviewed_by"] = pharmacist_id  # Keep as string, don't convert to ObjectId
+
+    if rejection_reason:
+        update_fields["rejection_reason"] = rejection_reason
+
+    try:
+        result = await db.orders.update_one(
+            {
+                "thread_id": thread_id,
+                "patient_id": patient_object_id,
+                "items.medicine_id": medicine_object_id,
+                "status": "pending_pharmacist_review",
+            },
+            {
+                "$set": update_fields
+            }
+        )
+
+        return {
+            "success": result.modified_count > 0,
+            "status": new_status,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update order: {str(e)}"
+        )

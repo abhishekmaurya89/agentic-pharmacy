@@ -1,7 +1,7 @@
 from backend.app.agent.state import PharmacyState
 from backend.app.agent.llm import extract_medication_request
 from langgraph.types import interrupt
-from backend.app.services.order_service import execute_order
+from backend.app.services.order_service import execute_order, create_pending_order, update_pending_order_status
 from backend.app.services.inventory_service import check_inventory
 from backend.app.services.risk_service import (
     calculate_order_risk
@@ -10,6 +10,9 @@ from backend.app.services.interaction_service import (
     check_drug_interactions
 )
 
+from backend.app.services.pharmacist_service import (
+    create_pharmacist_review
+)
 
 async def check_interactions_node(
     state: PharmacyState
@@ -59,25 +62,91 @@ async def assess_risk(
         "risk_score": result["risk_score"],
         "risk_reasons": result["risk_reasons"]
     }
-
-async def pharmacist_review(state: PharmacyState) -> PharmacyState:
+async def pharmacist_review(
+    state: PharmacyState
+) -> PharmacyState:
 
     medicine = state["medicine"]
 
-    review_request = {
-        "type": "pharmacist_review",
-        "message": "This order requires pharmacist approval.",
-        "patient_id": state["user_id"],
-        "medicine_id": state["medicine_id"],
-        "medicine": medicine["name"],
-        "strength": medicine.get("strength"),
-        "quantity": state["quantity"],
-        "risk_level": state.get("risk_level"),
-        "risk_score": state.get("risk_score"),
-        "risk_reasons": state.get("risk_reasons", []),
-    }
+    thread_id = state.get("thread_id", "")
 
-    review = interrupt(review_request)
+    risk_level = state.get(
+        "risk_level",
+        "high"
+    )
+
+    risk_score = state.get(
+        "risk_score",
+        0
+    )
+
+    risk_reasons = state.get(
+        "risk_reasons",
+        []
+    )
+
+    review_id = await create_pharmacist_review(
+        thread_id=thread_id,
+
+        patient_id=state["user_id"],
+
+        medicine_id=state["medicine_id"],
+
+        medicine=medicine,
+
+        quantity=state["quantity"],
+
+        risk_level=risk_level,
+
+        risk_score=risk_score,
+
+        risk_reasons=risk_reasons,
+    )
+
+    # Create pending order in orders collection
+    await create_pending_order(
+        patient_id=state["user_id"],
+        medicine_id=state["medicine_id"],
+        medicine=medicine,
+        quantity=state["quantity"],
+        risk_level=risk_level,
+        risk_reasons=risk_reasons,
+        thread_id=thread_id,
+    )
+
+    # Pause LangGraph
+
+    review = interrupt({
+
+        "type": "pharmacist_review",
+
+        "message": (
+            "This order requires "
+            "pharmacist approval."
+        ),
+
+        "review_id": review_id,
+
+        "patient_id": state["user_id"],
+
+        "medicine_id": state["medicine_id"],
+
+        "medicine": medicine["name"],
+
+        "strength": medicine.get(
+            "strength"
+        ),
+
+        "quantity": state["quantity"],
+
+        "risk_level": risk_level,
+
+        "risk_score": risk_score,
+
+        "risk_reasons": risk_reasons,
+    })
+
+    # Resumed by pharmacist
 
     approved = (
         isinstance(review, dict)
@@ -85,22 +154,36 @@ async def pharmacist_review(state: PharmacyState) -> PharmacyState:
     )
 
     if not approved:
+
         return {
             **state,
+
             "pharmacist_approved": False,
+
             "order_ready": False,
+
             "order_result": None,
+
             "response": (
-                "Order rejected by the pharmacist."
+                "Your order was rejected "
+                "during pharmacist review."
             ),
         }
 
     return {
         **state,
-        "pharmacist_approved": True,
-        "pharmacist_id": review.get("pharmacist_id"),
-    }
 
+        "pharmacist_approved": True,
+
+        "pharmacist_id": review.get(
+            "pharmacist_id"
+        ),
+
+        "response": (
+            "Pharmacist approved the order. "
+            "Processing your medication order."
+        ),
+    }
 async def extract_intent(
     state: PharmacyState
 ) -> PharmacyState:

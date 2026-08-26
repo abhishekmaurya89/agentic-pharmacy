@@ -5,6 +5,7 @@ class PharmacyState(TypedDict, total=False):
 
     user_message: str
     user_id: str
+    thread_id: str
 
     intent: str
     medicine_name: str | None
@@ -37,4 +38,3 @@ class PharmacyState(TypedDict, total=False):
     order_result: dict[str, Any] | None
 
     response: str
-    

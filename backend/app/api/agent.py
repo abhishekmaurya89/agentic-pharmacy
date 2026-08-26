@@ -32,6 +32,7 @@ async def chat(
     initial_state: PharmacyState = {
         "user_message": message,
         "user_id": current_user["id"],
+        "thread_id": thread_id,
     }
 
     result = await graph.ainvoke(
