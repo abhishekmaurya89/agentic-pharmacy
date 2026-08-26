@@ -83,6 +83,77 @@ async def create_pharmacist_review(
 
     return str(result.inserted_id)
 
+async def get_thread_status(
+    thread_id: str,
+):
+    review = await db.pharmacist_reviews.find_one(
+        {
+            "thread_id": thread_id,
+        }
+    )
+
+    if not review:
+        return {
+            "status": "pending",
+            "thread_id": thread_id,
+        }
+
+    result = {
+        "thread_id": thread_id,
+        "status": review.get(
+            "status",
+            "pending",
+        ),
+        "medicine_name": review.get(
+            "medicine_name"
+        ),
+        "strength": review.get(
+            "strength"
+        ),
+        "quantity": review.get(
+            "quantity"
+        ),
+        "risk_level": review.get(
+            "risk_level"
+        ),
+        "risk_score": review.get(
+            "risk_score"
+        ),
+        "risk_reasons": review.get(
+            "risk_reasons",
+            []
+        ),
+        "rejection_reason": review.get(
+            "rejection_reason"
+        ),
+    }
+
+    if review.get("status") == "approved":
+
+        order = await db.orders.find_one(
+            {
+                "thread_id": thread_id,
+            }
+        )
+
+        if order:
+            result["order_id"] = str(
+                order["_id"]
+            )
+
+            result["status"] = order.get(
+                "status",
+                "confirmed",
+            )
+
+            result["total_amount"] = (
+                order.get(
+                    "total_amount"
+                )
+            )
+
+    return result
+
 async def get_review_by_thread_id(
     thread_id: str
 ):

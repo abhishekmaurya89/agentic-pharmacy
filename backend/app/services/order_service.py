@@ -20,11 +20,44 @@ def validate_object_id(value: str, field_name: str) -> ObjectId:
 
     return ObjectId(value)
 
+async def get_order_status_by_thread(
+    thread_id: str,
+):
+    order = await db.orders.find_one(
+        {
+            "thread_id": thread_id,
+        }
+    )
+
+    if not order:
+        return None
+
+    return {
+        "order_id": str(order["_id"]),
+        "thread_id": order.get("thread_id"),
+        "status": order.get("status"),
+        "medicine_id": str(
+            order["medicine_id"]
+        ) if order.get("medicine_id") else None,
+        "medicine_name": order.get(
+            "medicine_name"
+        ),
+        "quantity": order.get(
+            "quantity"
+        ),
+        "total_amount": order.get(
+            "total_amount"
+        ),
+        "rejection_reason": order.get(
+            "rejection_reason"
+        ),
+    }
 
 async def execute_order(
     patient_id: str,
     medicine_id: str,
-    quantity: int
+    quantity: int,
+    thread_id: str | None = None,
 ):
     if quantity <= 0:
         raise HTTPException(
@@ -118,26 +151,37 @@ async def execute_order(
 
 
     order = {
-        "patient_id": patient_object_id,
-        "items": [
-            {
-                "medicine_id": medicine_object_id,
-                "quantity": quantity,
-                "unit_price": medicine["unit_price"]
-            }
-        ],
-        "total_amount": total_amount,
-        "status": "confirmed",
-        "created_at": datetime.now(timezone.utc)
-    }
+    "thread_id": thread_id,
+
+    "patient_id": ObjectId(
+        patient_id
+    ),
+
+    "items": [
+        {
+            "medicine_id": ObjectId(
+                medicine_id
+            ),
+            "quantity": quantity,
+            "unit_price": medicine[
+                "unit_price"
+            ],
+        }
+    ],
+
+    "total_amount": total_amount,
+
+    "status": "confirmed",
+
+    "created_at": datetime.now(
+        timezone.utc
+    ),
+}
 
     try:
         order_result = await db.orders.insert_one(order)
 
     except Exception:
-        # IMPORTANT:
-        # If order creation fails after stock deduction,
-        # restore the stock.
         await db.medicines.update_one(
             {
                 "_id": medicine_object_id

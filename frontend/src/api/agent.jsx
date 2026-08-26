@@ -4,15 +4,18 @@ const API = axios.create({
   baseURL: "http://localhost:8000",
 });
 
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-}, (error) => {
-  return Promise.reject(error);
-});
+API.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  },
+);
 
 export const sendAgentMessage = async (message) => {
   const response = await API.post(
@@ -22,7 +25,7 @@ export const sendAgentMessage = async (message) => {
       params: {
         message,
       },
-    }
+    },
   );
 
   return response.data;
@@ -30,7 +33,7 @@ export const sendAgentMessage = async (message) => {
 export const confirmOrder = async (
   threadId,
   confirmed,
-  approvalType = "order"
+  approvalType = "order",
 ) => {
   const response = await API.post(
     "/agent/confirm",
@@ -41,8 +44,19 @@ export const confirmOrder = async (
         confirmed,
         approval_type: approvalType,
       },
-    }
+    },
   );
+
+  return response.data;
+};
+export const getOrderStatus = async (threadId) => {
+  const token = localStorage.getItem("access_token");
+
+  const response = await API.get(`/orders/status/${threadId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
 
   return response.data;
 };
