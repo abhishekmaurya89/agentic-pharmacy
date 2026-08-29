@@ -11,10 +11,12 @@ from backend.app.agent.nodes import (
     check_prescription_node,
     execute_order_node,
     extract_intent,
+    greeting_response,
     human_approval,
     medicine_information,
     pharmacist_review,
     prepare_order,
+    refill_request,
     reject_order,
     resolve_medicine,
     unknown_request,
@@ -35,10 +37,16 @@ def route_intent(state: PharmacyState):
 
     intent = state.get("intent")
 
-    if intent == "order_medicine":
+    if intent in {"greeting", "hello", "hi", "hey"}:
+        return "greeting"
+
+    if intent in {"order", "order_medicine"}:
         return "order"
 
-    if intent == "medicine_information":
+    if intent in {"refill", "refill_medicine"}:
+        return "refill"
+
+    if intent in {"inquiry", "medicine_information", "information"}:
         return "information"
 
     return "unknown"
@@ -93,8 +101,9 @@ def build_pharmacy_graph():
     graph = StateGraph(PharmacyState)
 
     graph.add_node("extract_intent", extract_intent)
-
+    graph.add_node("greeting_response", greeting_response)
     graph.add_node("resolve_medicine", resolve_medicine)
+    graph.add_node("refill_request", refill_request)
 
     graph.add_node("check_inventory", check_inventory_node)
 
@@ -122,7 +131,9 @@ def build_pharmacy_graph():
         "extract_intent",
         route_intent,
         {
+            "greeting": "greeting_response",
             "order": "resolve_medicine",
+            "refill": "refill_request",
             "information": "medicine_information",
             "unknown": "unknown_request",
         },
@@ -166,8 +177,9 @@ def build_pharmacy_graph():
     graph.add_edge("execute_order", END)
 
     # Other terminal paths
+    graph.add_edge("greeting_response", END)
     graph.add_edge("medicine_information", END)
-
+    graph.add_edge("refill_request", END)
     graph.add_edge("unknown_request", END)
     graph.add_conditional_edges(
         "pharmacist_review",

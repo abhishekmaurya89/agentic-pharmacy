@@ -5,10 +5,14 @@ from pydantic import BaseModel, Field
 
 class MedicationRequest(BaseModel):
     intent: Literal[
+        "greeting",
+        "inquiry",
+        "order",
+        "refill",
+        "unknown",
         "order_medicine",
         "refill_medicine",
         "medicine_information",
-        "unknown"
     ]
 
     medicine_name: str | None = None
@@ -16,7 +20,7 @@ class MedicationRequest(BaseModel):
     quantity: int | None = Field(
         default=None,
         gt=0,
-        le=100
+        le=100,
     )
 
     clarification_needed: bool = False
