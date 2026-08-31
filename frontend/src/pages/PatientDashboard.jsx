@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { Send, LogOut, Bot, User, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { sendAgentMessage, confirmOrder, getOrderStatus } from "../api/agent";
+import {
+  sendAgentMessage,
+  confirmOrder,
+  getRefillPredictions,
+  getOrderStatus,
+} from "../api/agent";
 
 import OrderConfirmation from "../components/OrderConfirmation";
 
@@ -18,11 +23,31 @@ export default function PatientDashboard() {
     },
   ]);
 
+  const [refillPredictions, setRefillPredictions] = useState([]);
+  const [refillLoading, setRefillLoading] = useState(true);
+
   const [pendingOrder, setPendingOrder] = useState(null);
   const [pharmacistReview, setPharmacistReview] = useState(null);
+
   const [threadId, setThreadId] = useState(null);
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    const loadRefillPredictions = async () => {
+      try {
+        const data = await getRefillPredictions();
+
+        setRefillPredictions(data.predictions || []);
+      } catch (error) {
+        console.error("Failed to load refill predictions:", error);
+      } finally {
+        setRefillLoading(false);
+      }
+    };
+
+    loadRefillPredictions();
+  }, []);
 
   useEffect(() => {
     if (!pharmacistReview?.thread_id) {
@@ -124,9 +149,7 @@ export default function PatientDashboard() {
 
       if (data.interrupt && data.interrupt.type === "order_confirmation") {
         setThreadId(data.thread_id);
-
         setPendingOrder(data.interrupt);
-
         setPharmacistReview(null);
       }
 
@@ -235,6 +258,44 @@ export default function PatientDashboard() {
             Ask me to order or manage your medications.
           </p>
         </div>
+
+        {!refillLoading && refillPredictions.length > 0 && (
+          <div className="mb-6 space-y-3">
+            {refillPredictions.map((prediction) => (
+              <div
+                key={prediction.medicine_id}
+                className="rounded-2xl border bg-white p-5 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-blue-600">
+                      Refill Reminder
+                    </p>
+
+                    <h3 className="mt-1 text-lg font-semibold">
+                      {prediction.medicine_name}
+
+                      {prediction.strength && ` ${prediction.strength}`}
+                    </h3>
+
+                    <p className="mt-1 text-sm text-gray-500">
+                      Your usual refill interval is about{" "}
+                      {prediction.average_interval_days} days.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-blue-50 px-3 py-2 text-center">
+                    <p className="text-2xl font-bold text-blue-600">
+                      {Math.max(prediction.days_until_refill, 0)}
+                    </p>
+
+                    <p className="text-xs text-blue-600">days</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="min-h-[500px] rounded-2xl border bg-white shadow-sm">
           <div className="space-y-5 p-6">

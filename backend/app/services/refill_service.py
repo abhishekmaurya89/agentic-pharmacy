@@ -1,96 +1,139 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
+
+from bson import ObjectId
 
 from backend.app.db.mongodb import db
 
-MIN_PURCHASES = 2
-DEFAULT_DAYS_BUFFER = 5
 
+async def get_refill_predictions(patient_id: str):
+    if not ObjectId.is_valid(patient_id):
+        return []
 
-async def predict_refill(patient_id: str, medicine_id: str):
+    patient_object_id = ObjectId(patient_id)
 
     orders = (
         await db.orders.find(
             {
-                "patient_id": patient_id,
+                "patient_id": patient_object_id,
                 "status": "confirmed",
-                "items.medicine_id": medicine_id,
             }
         )
-        .sort("created_at", -1)
-        .limit(10)
-        .to_list(length=10)
+        .sort(
+            "created_at",
+            1,
+        )
+        .to_list(length=100)
     )
 
-    if len(orders) < MIN_PURCHASES:
-        return {"predictable": False, "reason": "Insufficient purchase history"}
-
-    purchase_dates = []
+    medicine_orders = {}
 
     for order in orders:
-        purchase_dates.append(order["created_at"])
+        for item in order.get("items", []):
+            medicine_id = item.get("medicine_id")
 
-    purchase_dates.sort()
+            if not medicine_id:
+                continue
 
-    intervals = []
+            medicine_id = str(medicine_id)
 
-    for i in range(1, len(purchase_dates)):
-        previous = purchase_dates[i - 1]
-        current = purchase_dates[i]
+            medicine_orders.setdefault(medicine_id, []).append(
+                {
+                    "created_at": order.get("created_at"),
+                    "quantity": item.get("quantity", 0),
+                    "medicine_id": medicine_id,
+                    "medicine_name": item.get("medicine_name"),
+                    "strength": item.get("strength"),
+                }
+            )
 
-        days = (current - previous).total_seconds() / 86400
-
-        if days > 0:
-            intervals.append(days)
-
-    if not intervals:
-        return {"predictable": False, "reason": "Unable to calculate purchase interval"}
-
-    average_interval = sum(intervals) / len(intervals)
-
-    last_purchase = purchase_dates[-1]
-
-    predicted_date = last_purchase + timedelta(days=average_interval)
+    predictions = []
 
     now = datetime.now(timezone.utc)
 
-    days_until_refill = (predicted_date - now).total_seconds() / 86400
+    for medicine_id, orders_for_medicine in medicine_orders.items():
+        if len(orders_for_medicine) < 2:
+            continue
 
-    return {
-        "predictable": True,
-        "average_interval_days": round(average_interval, 2),
-        "predicted_refill_date": predicted_date,
-        "days_until_refill": round(days_until_refill, 2),
-    }
+        dates = [
+            order["created_at"]
+            for order in orders_for_medicine
+            if order.get("created_at")
+        ]
+
+        if len(dates) < 2:
+            continue
+
+        intervals = []
+
+        for index in range(1, len(dates)):
+            previous = dates[index - 1]
+            current = dates[index]
+
+            if previous.tzinfo is None:
+                previous = previous.replace(tzinfo=timezone.utc)
+
+            if current.tzinfo is None:
+                current = current.replace(tzinfo=timezone.utc)
+
+            interval = (current - previous).days
+
+            if interval > 0:
+                intervals.append(interval)
+
+        if not intervals:
+            continue
+
+        average_interval = sum(intervals) / len(intervals)
+
+        latest_order = orders_for_medicine[-1]
+
+        latest_date = latest_order["created_at"]
+
+        if latest_date.tzinfo is None:
+            latest_date = latest_date.replace(tzinfo=timezone.utc)
+
+        predicted_date = latest_date + timedelta(days=round(average_interval))
+
+        days_until_refill = (predicted_date - now).days
+
+        if days_until_refill <= 7:
+            predictions.append(
+                {
+                    "medicine_id": medicine_id,
+                    "medicine_name": latest_order.get("medicine_name"),
+                    "strength": latest_order.get("strength"),
+                    "last_quantity": latest_order.get("quantity"),
+                    "average_interval_days": round(average_interval),
+                    "predicted_refill_date": predicted_date,
+                    "days_until_refill": days_until_refill,
+                }
+            )
+
+    return predictions
 
 
-async def generate_refill_alert(patient_id: str, medicine_id: str):
+async def generate_refill_alert(
+    patient_id: str,
+):
+    predictions = await get_refill_predictions(patient_id)
 
-    prediction = await predict_refill(patient_id, medicine_id)
+    alerts = []
 
-    if not prediction["predictable"]:
-        return None
+    for prediction in predictions:
+        alerts.append(
+            {
+                "type": "refill_alert",
+                "medicine_id": prediction["medicine_id"],
+                "medicine_name": prediction["medicine_name"],
+                "strength": prediction.get("strength"),
+                "message": (
+                    f"{prediction['medicine_name']}"
+                    f" may need a refill in "
+                    f"{max(prediction['days_until_refill'], 0)} days."
+                ),
+                "predicted_refill_date": prediction["predicted_refill_date"],
+                "days_until_refill": prediction["days_until_refill"],
+            }
+        )
 
-    days_until_refill = prediction["days_until_refill"]
-
-    if days_until_refill > DEFAULT_DAYS_BUFFER:
-        return None
-
-    existing = await db.refill_alerts.find_one(
-        {"patient_id": patient_id, "medicine_id": medicine_id, "status": "pending"}
-    )
-
-    if existing:
-        return None
-
-    alert = {
-        "patient_id": patient_id,
-        "medicine_id": medicine_id,
-        "predicted_refill_date": prediction["predicted_refill_date"],
-        "days_until_refill": days_until_refill,
-        "status": "pending",
-        "created_at": datetime.now(timezone.utc),
-    }
-
-    result = await db.refill_alerts.insert_one(alert)
-
-    return {"alert_id": str(result.inserted_id), **prediction}
+    return alerts

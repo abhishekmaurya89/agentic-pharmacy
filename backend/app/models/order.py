@@ -5,7 +5,10 @@ from pydantic import BaseModel, Field
 
 class OrderItem(BaseModel):
     medicine_id: str
+    medicine_name: str | None = None
+    strength: str | None = None
     quantity: int = Field(gt=0, le=100)
+    unit_price: float
 
 
 class OrderCreate(BaseModel):
@@ -16,8 +19,6 @@ class OrderResponse(BaseModel):
     id: str
     patient_id: str
     items: list[OrderItem]
-
     total_amount: float
-
     status: str
     created_at: datetime
