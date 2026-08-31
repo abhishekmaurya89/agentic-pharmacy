@@ -5,6 +5,11 @@ from pydantic import BaseModel, Field
 
 class MedicationRequest(BaseModel):
     intent: Literal[
+        "greeting",
+        "inquiry",
+        "order",
+        "refill",
+        "unknown",
         "order_medicine",
         "refill_medicine",
         "medicine_information",
