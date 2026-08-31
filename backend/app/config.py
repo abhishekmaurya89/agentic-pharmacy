@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,3 +26,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if settings.langchain_api_key:
+    os.environ["LANGCHAIN_API_KEY"] = settings.langchain_api_key
+    os.environ["LANGSMITH_API_KEY"] = settings.langchain_api_key
+
+os.environ["LANGCHAIN_TRACING_V2"] = str(bool(settings.langchain_tracing_v2)).lower()
+os.environ["LANGSMITH_TRACING"] = str(bool(settings.langchain_tracing_v2)).lower()
+os.environ["LANGCHAIN_PROJECT"] = settings.langchain_project
+os.environ["LANGSMITH_PROJECT"] = settings.langchain_project

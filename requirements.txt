@@ -15,6 +15,7 @@ langgraph
 langgraph-checkpoint-sqlite
 langchain
 langchain-google-genai
+langsmith
 google-generativeai
 
 apscheduler
