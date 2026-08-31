@@ -133,9 +133,13 @@ export default function PatientDashboard() {
     ]);
 
     try {
-      const data = await sendAgentMessage(userMessage);
+      const data = await sendAgentMessage(userMessage, threadId);
 
       console.log("AGENT RESPONSE:", data);
+
+      if (data.thread_id) {
+        setThreadId(data.thread_id);
+      }
 
       if (data.response) {
         setMessages((prev) => [
@@ -160,7 +164,6 @@ export default function PatientDashboard() {
         });
 
         setPendingOrder(null);
-        setThreadId(null);
       }
     } catch (error) {
       console.error(error);
@@ -184,7 +187,6 @@ export default function PatientDashboard() {
       setSending(false);
     }
   };
-
   const handleApproval = async (confirmed) => {
     if (!threadId || approvalLoading) {
       return;

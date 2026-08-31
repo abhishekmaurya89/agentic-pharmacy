@@ -18,7 +18,7 @@ def calculate_order_risk(
         reasons.append("Prescription medicine")
 
     if quantity >= 100:
-        score += 40
+        score += 60
         reasons.append("Very large requested quantity")
     elif quantity >= 50:
         score += 30

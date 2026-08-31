@@ -7,7 +7,7 @@ class OrderItem(BaseModel):
     medicine_id: str
     medicine_name: str | None = None
     strength: str | None = None
-    quantity: int = Field(gt=0, le=100)
+    quantity: int = Field(gt=0)
     unit_price: float
 
 

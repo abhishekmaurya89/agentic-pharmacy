@@ -19,14 +19,19 @@ API.interceptors.request.use(
   },
 );
 
-export const sendAgentMessage = async (message) => {
+export const sendAgentMessage = async (message, threadId = null) => {
+  const params = {
+    message,
+  };
+
+  if (threadId) {
+    params.thread_id = threadId;
+  }
   const response = await API.post(
     "/agent/chat",
     {},
     {
-      params: {
-        message,
-      },
+      params,
     },
   );
 

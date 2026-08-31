@@ -3,10 +3,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.app.agent.schemas import MedicationRequest
 from backend.app.config import settings
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.5-flash-lite", google_api_key=settings.gemini_api_key, temperature=0
-)
 
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.5-flash-lite",
+    google_api_key=settings.gemini_api_key,
+    temperature=0,
+)
 
 structured_llm = llm.with_structured_output(MedicationRequest)
 
@@ -22,43 +24,83 @@ def normalize_intent(raw_intent: str | None) -> str:
         "hi": "greeting",
         "hello": "greeting",
         "hey": "greeting",
-        "inquiry": "inquiry",
-        "information": "inquiry",
-        "medicine_information": "inquiry",
-        "question": "inquiry",
-        "order": "order",
-        "order_medicine": "order",
-        "buy": "order",
-        "purchase": "order",
-        "refill": "refill",
-        "refill_medicine": "refill",
+        "order": "order_medicine",
+        "order_medicine": "order_medicine",
+        "buy": "order_medicine",
+        "purchase": "order_medicine",
+        "refill": "refill_medicine",
+        "refill_medicine": "refill_medicine",
+        "inquiry": "medicine_information",
+        "information": "medicine_information",
+        "medicine_information": "medicine_information",
+        "question": "medicine_information",
         "unknown": "unknown",
     }
 
     if value in aliases:
         return aliases[value]
 
-    if any(token in value for token in ["hello", "hi", "hey", "good_morning", "good_evening"]):
+    if any(
+        token in value
+        for token in [
+            "hello",
+            "hi",
+            "hey",
+            "good_morning",
+            "good_evening",
+        ]
+    ):
         return "greeting"
 
-    if any(token in value for token in ["what_is", "what_are", "used_for", "info", "information", "side_effect", "benefit", "price", "dose", "dosage"]):
-        return "inquiry"
+    if any(
+        token in value
+        for token in [
+            "what_is",
+            "what_are",
+            "what_does",
+            "what_do",
+            "used_for",
+            "info",
+            "information",
+            "side_effect",
+            "benefit",
+            "price",
+            "cost",
+            "dose",
+            "dosage",
+            "purpose",
+            "available",
+        ]
+    ):
+        return "medicine_information"
 
     if "refill" in value:
-        return "refill"
+        return "refill_medicine"
 
-    if any(token in value for token in ["order", "buy", "purchase", "need", "get", "prescribe"]):
-        return "order"
+    if any(
+        token in value
+        for token in [
+            "order",
+            "buy",
+            "purchase",
+            "need",
+            "get",
+        ]
+    ):
+        return "order_medicine"
 
     return "unknown"
 
 
-async def extract_medication_request(user_message: str) -> MedicationRequest:
+async def extract_medication_request(
+    user_message: str,
+    previous_medicine_name: str | None = None,
+) -> MedicationRequest:
 
     system_prompt = """
 You are the intent extraction component of a pharmacy AI system.
 
-Your ONLY job is to understand the user's request and classify its intent.
+Your ONLY job is to understand the user's request.
 
 Do NOT:
 - approve orders
@@ -66,99 +108,215 @@ Do NOT:
 - validate prescriptions
 - execute orders
 - provide medical advice
+- answer the user's medical question
 
-Extract:
-- intent
-- medicine name
-- quantity
-- clarification status
+Your output must only contain structured information about the request.
 
 Possible intents:
 
 greeting
-inquiry
-order
-refill
+order_medicine
+refill_medicine
+medicine_information
 unknown
 
-Use the following rules:
+For medicine_information requests, also determine information_type.
 
-1. greeting
-Use for simple greetings or conversational openings.
+Possible information_type values:
 
-Examples:
-"hi"
-"hello"
-"hey"
-"good morning"
+general
+uses
+side_effects
+precautions
+dosage
+price
+availability
 
-2. order
-Use when the user wants to purchase or order a medicine.
+Information type rules:
 
-Examples:
-"I need 20 paracetamol tablets"
-"Order 5 paracetamol"
-"Can I buy 10 ibuprofen?"
-
-3. refill
-Use when the user wants to refill a previously ordered or existing medicine.
+general:
+Questions asking what the medicine is or what it does.
 
 Examples:
-"Can you refill my usual medicine?"
-"I want a refill"
-"Refill my paracetamol"
+"What is paracetamol?"
+"Tell me about paracetamol"
+"What does paracetamol do?"
+"What is this medicine?"
 
-4. inquiry
-Use when the user is asking about a medicine, its uses, price, availability, dosage, side effects, strength, or other medicine-related information WITHOUT directly requesting an order.
+uses:
+Questions about what the medicine is used for.
 
 Examples:
 "What is paracetamol used for?"
-"What are the side effects of ibuprofen?"
-"How much does paracetamol cost?"
-"Do you have paracetamol?"
-"What is paracetamol 500mg?"
+"What are the uses?"
+"Why is paracetamol used?"
 
-5. unknown
-Use when the request is unrelated to greetings, medicine information, ordering medicine, or refilling medicine.
+side_effects:
+Questions about adverse effects.
 
 Examples:
-"What's the weather today?"
-"Tell me a joke"
-"Who is the president?"
+"What are the side effects?"
+"Does paracetamol have side effects?"
 
-Medicine extraction:
+precautions:
+Questions about warnings or precautions.
 
-If the user mentions a medicine, extract its name into medicine_name.
+Examples:
+"What precautions should I take?"
+"When should I avoid this medicine?"
 
-If the user specifies a quantity for an order, extract it into quantity.
+dosage:
+Questions specifically asking about dosage.
 
-For greetings:
-- intent = greeting
-- medicine_name = null
-- quantity = null
+Examples:
+"What is the dosage?"
+"How much should I take?"
 
-For medicine information:
-- extract medicine_name if present
-- do not treat the question as an order
+price:
+Questions about cost.
 
-For refill requests:
-- extract medicine_name if the user explicitly mentions one
-- quantity may be null if the user does not specify one
+Examples:
+"How much does it cost?"
+"What is the price?"
 
-If the request is ambiguous or required information is missing for the intended action, set:
+availability:
+Questions about pharmacy availability or stock.
+
+Examples:
+"Is it available?"
+"Do you have this medicine?"
+
+Conversation rule:
+
+The user may refer to a previously mentioned medicine using:
+
+- it
+- this medicine
+- this
+- that medicine
+- the medicine
+- its
+- same medicine
+
+If the current message refers to the previous medicine, use the previous medicine name.
+
+Previous medicine:
+paracetamol
+
+User:
+"what it do"
+
+Output:
+intent = medicine_information
+medicine_name = paracetamol
+information_type = general
+
+Previous medicine:
+paracetamol
+
+User:
+"what are its uses?"
+
+Output:
+intent = medicine_information
+medicine_name = paracetamol
+information_type = uses
+
+Previous medicine:
+paracetamol
+
+User:
+"how much does it cost?"
+
+Output:
+intent = medicine_information
+medicine_name = paracetamol
+information_type = price
+
+Previous medicine:
+paracetamol
+
+User:
+"is it available?"
+
+Output:
+intent = medicine_information
+medicine_name = paracetamol
+information_type = availability
+
+Order examples:
+
+"I need 20 paracetamol"
+
+intent = order_medicine
+medicine_name = paracetamol
+quantity = 20
+
+"Order 5"
+
+If previous medicine is paracetamol:
+
+intent = order_medicine
+medicine_name = paracetamol
+quantity = 5
+
+Refill examples:
+
+"refill my paracetamol"
+
+intent = refill_medicine
+medicine_name = paracetamol
+
+"refill this medicine"
+
+Use the previous medicine.
+
+Greeting examples:
+
+"hi"
+"hello"
+"hey"
+
+intent = greeting
+
+If the user does not provide a medicine name and there is no previous medicine that can resolve the request, set clarification_needed = true when appropriate.
+
+For example:
+
+User:
+"What are the side effects?"
+
+If there is no previous medicine:
+
+intent = medicine_information
+information_type = side_effects
 clarification_needed = true
+clarification_question = "Which medicine would you like information about?"
 
-If clarification is needed, provide a short clarification_question.
+Do not provide medical advice.
 
 Safety validation happens outside the LLM.
+"""
+
+    context = ""
+
+    if previous_medicine_name:
+        context = f"""
+Previous medicine mentioned by the user:
+{previous_medicine_name}
+
+Use this medicine when the current message refers to:
+"it", "this medicine", "that medicine", "its", "same medicine", etc.
 """
 
     response = await structured_llm.ainvoke(
         [
             ("system", system_prompt),
-            ("human", user_message),
+            (
+                "human",
+                f"{context}\nCurrent user message:\n{user_message}",
+            ),
         ]
     )
 
-    normalized = response.model_copy(update={"intent": normalize_intent(response.intent)})
-    return normalized
+    return response

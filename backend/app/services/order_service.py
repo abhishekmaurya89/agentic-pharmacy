@@ -59,8 +59,8 @@ async def execute_order(
 
     if quantity > 100:
         raise HTTPException(
-            status_code=400,
-            detail="Maximum order quantity is 100",
+            status_code=403,
+            detail="This quantity requires pharmacist approval before the order can be processed.",
         )
 
     patient_object_id = validate_object_id(
