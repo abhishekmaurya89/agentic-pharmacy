@@ -7,9 +7,11 @@ const API = axios.create({
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("access_token");
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
   (error) => {
@@ -17,19 +19,25 @@ API.interceptors.request.use(
   },
 );
 
-export const sendAgentMessage = async (message) => {
+export const sendAgentMessage = async (message, threadId = null) => {
+  const params = {
+    message,
+  };
+
+  if (threadId) {
+    params.thread_id = threadId;
+  }
   const response = await API.post(
     "/agent/chat",
     {},
     {
-      params: {
-        message,
-      },
+      params,
     },
   );
 
   return response.data;
 };
+
 export const confirmOrder = async (
   threadId,
   confirmed,
@@ -49,14 +57,15 @@ export const confirmOrder = async (
 
   return response.data;
 };
-export const getOrderStatus = async (threadId) => {
-  const token = localStorage.getItem("access_token");
 
-  const response = await API.get(`/orders/status/${threadId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+export const getOrderStatus = async (threadId) => {
+  const response = await API.get(`/orders/status/${threadId}`);
+
+  return response.data;
+};
+
+export const getRefillPredictions = async () => {
+  const response = await API.get("/refills/predictions");
 
   return response.data;
 };

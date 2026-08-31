@@ -1,9 +1,12 @@
 from langgraph.types import interrupt
 
-from backend.app.agent.llm import extract_medication_request
+from backend.app.agent.llm import (
+    extract_medication_request,
+    llm,
+)
 from backend.app.agent.state import PharmacyState
 from backend.app.services.interaction_service import check_drug_interactions
-from backend.app.services.inventory_service import check_inventory
+from backend.app.services.inventory_service import check_inventory, search_medicines
 from backend.app.services.order_service import (
     create_pending_order,
     execute_order,
@@ -130,19 +133,55 @@ async def pharmacist_review(state: PharmacyState) -> PharmacyState:
 
 async def extract_intent(state: PharmacyState) -> PharmacyState:
 
-    result = await extract_medication_request(state["user_message"])
+    previous_medicine = state.get("medicine_name")
+    previous_quantity = state.get("quantity")
+
+    result = await extract_medication_request(
+        state["user_message"],
+        previous_medicine,
+    )
+
+    medicine_name = result.medicine_name or previous_medicine
+
+    quantity = result.quantity if result.quantity is not None else previous_quantity
 
     return {
         **state,
         "intent": result.intent,
-        "medicine_name": result.medicine_name,
-        "quantity": result.quantity,
+        "medicine_name": medicine_name,
+        "quantity": quantity,
+        "information_type": result.information_type,
         "clarification_needed": result.clarification_needed,
         "clarification_question": result.clarification_question,
     }
 
 
-from backend.app.services.inventory_service import search_medicines
+async def greeting_response(state: PharmacyState) -> PharmacyState:
+    return {
+        **state,
+        "response": (
+            "Hello! I can help you with medicine information, placing an order, or managing a refill."
+        ),
+    }
+
+
+async def refill_request(state: PharmacyState) -> PharmacyState:
+    medicine_name = state.get("medicine_name")
+
+    if not medicine_name:
+        return {
+            **state,
+            "response": "Which medicine would you like to refill?",
+            "order_ready": False,
+        }
+
+    return {
+        **state,
+        "response": (
+            f"I can help with a refill for {medicine_name}. "
+            "I’ll check your prescription and refill eligibility next."
+        ),
+    }
 
 
 async def resolve_medicine(state: PharmacyState) -> PharmacyState:
@@ -278,25 +317,102 @@ async def medicine_information(state: PharmacyState) -> PharmacyState:
     medicine_name = state.get("medicine_name")
 
     if not medicine_name:
-        return {**state, "response": "Which medicine would you like information about?"}
+        return {
+            **state,
+            "response": "Which medicine would you like information about?",
+        }
 
     medicines = await search_medicines(medicine_name)
 
     if not medicines:
         return {
             **state,
-            "response": (f"I couldn't find information for {medicine_name}."),
+            "response": f"I couldn't find information for {medicine_name}.",
         }
 
     medicine = medicines[0]
 
+    information_type = state.get(
+        "information_type",
+        "general",
+    )
+
+    medicine_context = {
+        "name": medicine.get("name"),
+        "strength": medicine.get("strength"),
+        "form": medicine.get("form"),
+        "description": medicine.get("description"),
+        "uses": medicine.get("uses"),
+        "side_effects": medicine.get("side_effects"),
+        "precautions": medicine.get("precautions"),
+        "dosage": medicine.get("dosage"),
+        "unit_price": medicine.get("unit_price"),
+        "stock": medicine.get("stock"),
+    }
+
+    information_prompt = f"""
+You are a pharmacy information assistant.
+
+Medicine data from the pharmacy database:
+
+{medicine_context}
+
+Information requested:
+
+{information_type}
+
+Answer the user's question clearly and concisely.
+
+Rules:
+
+- Use the provided medicine data as the primary source.
+- Do not invent medicine-specific facts.
+- Do not provide personalized medical advice.
+- Do not recommend a personalized dosage.
+- Do not diagnose medical conditions.
+- If the requested information is not available in the database, say so.
+- Only mention price when the user asks about price.
+- Only mention availability or stock when the user asks about availability.
+- For general questions, explain what the medicine is and its general purpose when that information is available.
+- Keep the answer patient-friendly.
+"""
+
+    response = await llm.ainvoke(
+        [
+            ("system", information_prompt),
+            ("human", state["user_message"]),
+        ]
+    )
+
+    content = response.content
+
+    if isinstance(content, str):
+        answer = content
+
+    elif isinstance(content, list):
+        parts = []
+
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+
+            elif isinstance(item, dict):
+                text = item.get("text")
+
+                if text:
+                    parts.append(str(text))
+
+        answer = "".join(parts)
+
+    elif isinstance(content, dict):
+        answer = str(content.get("text", content))
+
+    else:
+        answer = str(content)
+
     return {
         **state,
-        "response": (
-            f"{medicine['name']} "
-            f"{medicine.get('strength', '')} "
-            f"is available in our pharmacy."
-        ),
+        "response": answer,
     }
 
 

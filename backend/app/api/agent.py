@@ -11,12 +11,16 @@ router = APIRouter(prefix="/agent", tags=["Agent"])
 
 @router.post("/chat")
 async def chat(
-    request: Request, message: str, current_user: dict = Depends(get_current_user)
+    request: Request,
+    message: str,
+    thread_id: str | None = None,
+    current_user: dict = Depends(get_current_user),
 ):
 
     graph = request.app.state.pharmacy_graph
 
-    thread_id = str(uuid.uuid4())
+    if not thread_id:
+        thread_id = str(uuid.uuid4())
 
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -56,7 +60,6 @@ async def confirm_order(
 
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Use different field names based on approval type
     if approval_type == "pharmacist":
         resume_data = {"approved": confirmed}
     else:

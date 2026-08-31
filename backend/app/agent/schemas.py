@@ -8,7 +8,8 @@ class MedicationRequest(BaseModel):
         "order_medicine",
         "refill_medicine",
         "medicine_information",
-        "unknown"
+        "greeting",
+        "unknown",
     ]
 
     medicine_name: str | None = None
@@ -16,8 +17,20 @@ class MedicationRequest(BaseModel):
     quantity: int | None = Field(
         default=None,
         gt=0,
-        le=100
     )
+
+    information_type: (
+        Literal[
+            "general",
+            "uses",
+            "side_effects",
+            "precautions",
+            "dosage",
+            "price",
+            "availability",
+        ]
+        | None
+    ) = None
 
     clarification_needed: bool = False
 
