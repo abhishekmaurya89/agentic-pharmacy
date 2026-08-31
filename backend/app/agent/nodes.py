@@ -145,6 +145,34 @@ async def extract_intent(state: PharmacyState) -> PharmacyState:
 from backend.app.services.inventory_service import search_medicines
 
 
+async def greeting_response(state: PharmacyState) -> PharmacyState:
+    return {
+        **state,
+        "response": (
+            "Hello! I can help you with medicine information, placing an order, or managing a refill."
+        ),
+    }
+
+
+async def refill_request(state: PharmacyState) -> PharmacyState:
+    medicine_name = state.get("medicine_name")
+
+    if not medicine_name:
+        return {
+            **state,
+            "response": "Which medicine would you like to refill?",
+            "order_ready": False,
+        }
+
+    return {
+        **state,
+        "response": (
+            f"I can help with a refill for {medicine_name}. "
+            "I’ll check your prescription and refill eligibility next."
+        ),
+    }
+
+
 async def resolve_medicine(state: PharmacyState) -> PharmacyState:
 
     medicine_name = state.get("medicine_name")
@@ -370,3 +398,4 @@ async def human_approval(state: PharmacyState) -> PharmacyState:
         }
 
     return {**state, "confirmed": True}
+

@@ -7,9 +7,11 @@ const API = axios.create({
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("access_token");
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
   (error) => {
@@ -30,6 +32,7 @@ export const sendAgentMessage = async (message) => {
 
   return response.data;
 };
+
 export const confirmOrder = async (
   threadId,
   confirmed,
@@ -49,14 +52,15 @@ export const confirmOrder = async (
 
   return response.data;
 };
-export const getOrderStatus = async (threadId) => {
-  const token = localStorage.getItem("access_token");
 
-  const response = await API.get(`/orders/status/${threadId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+export const getOrderStatus = async (threadId) => {
+  const response = await API.get(`/orders/status/${threadId}`);
+
+  return response.data;
+};
+
+export const getRefillPredictions = async () => {
+  const response = await API.get("/refills/predictions");
 
   return response.data;
 };
