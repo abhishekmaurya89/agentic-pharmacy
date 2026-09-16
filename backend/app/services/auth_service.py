@@ -118,5 +118,7 @@ async def authenticate_user(
 
     return {
         "access_token": token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "role": user["role"],
+        "name": user.get("name", ""),
     }

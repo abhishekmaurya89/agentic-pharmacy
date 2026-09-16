@@ -20,15 +20,20 @@ async def update_pharmacist_review(
     if not approved:
         update_data["rejection_reason"] = rejection_reason or "Rejected by pharmacist"
 
-    result = await db.pharmacist_reviews.update_one(
-        {
-            "thread_id": thread_id,
-            "status": "pending",
-        },
-        {"$set": update_data},
-    )
+    if result.modified_count == 1:
+        await db.audit_logs.insert_one(
+            {
+                "event": "PHARMACIST_REVIEW_COMPLETED",
+                "thread_id": thread_id,
+                "approved": approved,
+                "pharmacist_id": str(pharmacist_id),
+                "rejection_reason": rejection_reason,
+                "timestamp": datetime.now(timezone.utc),
+            }
+        )
+        return True
 
-    return result.modified_count == 1
+    return False
 
 
 async def create_pharmacist_review(
@@ -80,6 +85,7 @@ async def get_thread_status(
 
     result = {
         "thread_id": thread_id,
+        "patient_id": str(review.get("patient_id")) if review.get("patient_id") else None,
         "status": review.get(
             "status",
             "pending",

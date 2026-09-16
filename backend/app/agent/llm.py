@@ -3,7 +3,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.app.agent.schemas import MedicationRequest
 from backend.app.config import settings
 
-
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
     google_api_key=settings.gemini_api_key,

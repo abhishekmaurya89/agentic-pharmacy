@@ -17,55 +17,50 @@ from backend.app.services.risk_service import calculate_order_risk
 
 
 async def check_interactions_node(state: PharmacyState) -> PharmacyState:
-
     result = await check_drug_interactions(
         patient_id=state["user_id"], medicine_id=state["medicine_id"]
     )
-
-    if result["interaction_found"]:
+    reasons = list(state.get("risk_reasons", []))
+    if result.get("interaction_found"):
+        if "Potential drug interaction detected" not in reasons:
+            reasons.append("Potential drug interaction detected")
         return {
             **state,
             "interaction_result": result,
             "risk_level": "high",
-            "risk_reasons": [
-                *state.get("risk_reasons", []),
-                "Potential drug interaction detected",
-            ],
-            "response": (
-                "A potential medication interaction was detected. "
-                "This order requires pharmacist review."
-            ),
+            "risk_reasons": reasons,
         }
-
-    return {**state, "interaction_result": result}
+    return {**state, "interaction_result": result, "risk_reasons": reasons}
 
 
 async def assess_risk(state: PharmacyState) -> PharmacyState:
-
     result = calculate_order_risk(
         medicine=state["medicine"],
-        quantity=state["quantity"],
-        prescription_result=state["prescription_result"],
+        quantity=state.get("quantity"),
+        prescription_result=state.get("prescription_result") or {},
     )
-
+    score = result["risk_score"]
+    reasons = list(state.get("risk_reasons", []))
+    for r in result.get("risk_reasons", []):
+        if r not in reasons:
+            reasons.append(r)
+    level = result["risk_level"]
+    if state.get("interaction_result", {}).get("interaction_found"):
+        level = "high"
+        score = max(score, 80)
     return {
         **state,
-        "risk_level": result["risk_level"],
-        "risk_score": result["risk_score"],
-        "risk_reasons": result["risk_reasons"],
+        "risk_level": level,
+        "risk_score": score,
+        "risk_reasons": reasons,
     }
 
 
 async def pharmacist_review(state: PharmacyState) -> PharmacyState:
-
     medicine = state["medicine"]
-
     thread_id = state.get("thread_id", "")
-
     risk_level = state.get("risk_level", "high")
-
     risk_score = state.get("risk_score", 0)
-
     risk_reasons = state.get("risk_reasons", [])
 
     review_id = await create_pharmacist_review(
@@ -79,7 +74,6 @@ async def pharmacist_review(state: PharmacyState) -> PharmacyState:
         risk_reasons=risk_reasons,
     )
 
-    # Create pending order in orders collection
     await create_pending_order(
         patient_id=state["user_id"],
         medicine_id=state["medicine_id"],
@@ -90,12 +84,16 @@ async def pharmacist_review(state: PharmacyState) -> PharmacyState:
         thread_id=thread_id,
     )
 
-    # Pause LangGraph
+    reasons_text = ", ".join(risk_reasons) if risk_reasons else "Safety review required"
+    hold_message = (
+        f"This order for {medicine['name']} ({state['quantity']} units) requires pharmacist approval due to safety policies: {reasons_text}. "
+        f"Your order has been placed on hold pending pharmacist review."
+    )
 
     review = interrupt(
         {
             "type": "pharmacist_review",
-            "message": ("This order requires pharmacist approval."),
+            "message": hold_message,
             "review_id": review_id,
             "patient_id": state["user_id"],
             "medicine_id": state["medicine_id"],
@@ -108,23 +106,27 @@ async def pharmacist_review(state: PharmacyState) -> PharmacyState:
         }
     )
 
-    # Resumed by pharmacist
-
     approved = isinstance(review, dict) and review.get("approved") is True
 
     if not approved:
+        rejection_reason = (
+            review.get("rejection_reason")
+            if isinstance(review, dict) and review.get("rejection_reason")
+            else "Pharmacist rejected the order based on safety assessment."
+        )
         return {
             **state,
             "pharmacist_approved": False,
+            "rejection_reason": rejection_reason,
             "order_ready": False,
             "order_result": None,
-            "response": ("Your order was rejected during pharmacist review."),
+            "response": f"Your order was rejected during pharmacist review: {rejection_reason}",
         }
 
     return {
         **state,
         "pharmacist_approved": True,
-        "pharmacist_id": review.get("pharmacist_id"),
+        "pharmacist_id": review.get("pharmacist_id") if isinstance(review, dict) else None,
         "response": (
             "Pharmacist approved the order. Processing your medication order."
         ),
@@ -221,45 +223,63 @@ async def resolve_medicine(state: PharmacyState) -> PharmacyState:
     return {**state, "medicine_id": medicine["id"], "medicine": medicine}
 
 
-async def check_inventory_node(state):
-    print("CHECK INVENTORY STATE:", state)
-
+async def check_inventory_node(state: PharmacyState) -> PharmacyState:
     medicine_id = state.get("medicine_id")
-
     quantity = state.get("quantity")
-
-    print("MEDICINE ID:", medicine_id)
-
-    print("QUANTITY:", quantity)
 
     result = await check_inventory(
         medicine_id,
         quantity,
     )
 
-    return {"inventory_result": result}
+    if not result.get("allowed"):
+        reason = result.get("reason")
+        if reason == "QUANTITY_REQUIRED":
+            med_name = state.get("medicine_name") or "this medicine"
+            resp = f"Please specify the quantity of {med_name} you would like to order."
+        elif reason == "INVALID_QUANTITY":
+            resp = "Please specify a valid quantity greater than zero."
+        elif reason == "INSUFFICIENT_STOCK":
+            avail = result.get("available", 0)
+            resp = f"Insufficient stock available. Only {avail} units are currently in stock."
+        else:
+            resp = "Requested medication is currently unavailable in the requested quantity."
+        return {
+            **state,
+            "inventory_result": result,
+            "order_ready": False,
+            "response": resp,
+        }
+
+    return {**state, "inventory_result": result}
 
 
 from backend.app.services.prescription_service import check_prescription
 
 
 async def check_prescription_node(state: PharmacyState) -> PharmacyState:
-
     result = await check_prescription(
         patient_id=state["user_id"],
         medicine_id=state["medicine_id"],
-        quantity=state["quantity"],
+        quantity=state.get("quantity"),
     )
 
-    if not result["allowed"]:
+    if not result.get("allowed"):
+        reason = result.get("reason", "")
+        if reason == "PRESCRIPTION_REQUIRED":
+            resp = "A valid active prescription is required to order this medicine, but none was found for your account."
+        elif reason == "PRESCRIPTION_EXPIRED":
+            resp = "Your prescription for this medicine has expired. Please consult your physician for renewal."
+        elif reason == "PRESCRIPTION_QUANTITY_EXCEEDED":
+            rem = result.get("remaining_quantity", 0)
+            resp = f"The requested quantity exceeds your remaining prescription limit of {rem} units."
+        else:
+            resp = f"Prescription validation failed: {reason.replace('_', ' ').lower()}."
         return {
             **state,
             "prescription_result": result,
             "order_ready": False,
-            "response": (
-                "I can't complete this order because "
-                f"{result['reason'].replace('_', ' ').lower()}."
-            ),
+            "response": resp,
         }
 
     return {**state, "prescription_result": result}
@@ -292,16 +312,17 @@ async def prepare_order(state: PharmacyState) -> PharmacyState:
 
 
 async def execute_order_node(state: PharmacyState) -> PharmacyState:
-
     result = await execute_order(
         patient_id=state["user_id"],
         medicine_id=state["medicine_id"],
         quantity=state["quantity"],
+        thread_id=state.get("thread_id"),
     )
 
     return {
         **state,
         "order_result": result,
+        "order_ready": False,
         "response": (
             f"Order confirmed successfully.\n\n"
             f"Order ID: {result['order_id']}\n"

@@ -1,12 +1,12 @@
 def calculate_order_risk(
     medicine: dict,
-    quantity: int,
+    quantity: int | None,
     prescription_result: dict,
 ):
     score = 0
     reasons = []
 
-    if quantity <= 0:
+    if quantity is None or quantity <= 0:
         return {
             "risk_level": "high",
             "risk_score": 100,

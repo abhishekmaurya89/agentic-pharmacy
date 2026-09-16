@@ -34,6 +34,7 @@ async def get_order_status_by_thread(
 
     return {
         "order_id": str(order["_id"]),
+        "patient_id": str(order.get("patient_id")) if order.get("patient_id") else None,
         "thread_id": order.get("thread_id"),
         "status": order.get("status"),
         "medicine_id": (str(item["medicine_id"]) if item.get("medicine_id") else None),
@@ -150,8 +151,40 @@ async def execute_order(
         "created_at": datetime.now(timezone.utc),
     }
 
+    existing_pending = None
+    if thread_id:
+        existing_pending = await db.orders.find_one(
+            {
+                "thread_id": thread_id,
+                "status": "pending_pharmacist_review",
+            }
+        )
+
     try:
-        order_result = await db.orders.insert_one(order)
+        if existing_pending:
+            await db.orders.update_one(
+                {"_id": existing_pending["_id"]},
+                {
+                    "$set": {
+                        "status": "confirmed",
+                        "total_amount": total_amount,
+                        "items": [
+                            {
+                                "medicine_id": medicine_object_id,
+                                "medicine_name": medicine["name"],
+                                "strength": medicine.get("strength"),
+                                "quantity": quantity,
+                                "unit_price": medicine["unit_price"],
+                            }
+                        ],
+                        "confirmed_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            order_id = str(existing_pending["_id"])
+        else:
+            order_result = await db.orders.insert_one(order)
+            order_id = str(order_result.inserted_id)
 
     except Exception:
         await db.medicines.update_one(
@@ -165,10 +198,20 @@ async def execute_order(
         )
 
     if medicine["prescription_required"]:
+        patient_query = (
+            {"$in": [patient_object_id, patient_id]}
+            if ObjectId.is_valid(patient_id)
+            else patient_id
+        )
+        medicine_query = (
+            {"$in": [medicine_object_id, medicine_id]}
+            if ObjectId.is_valid(medicine_id)
+            else medicine_id
+        )
         prescription_update = await db.prescriptions.update_one(
             {
-                "patient_id": patient_object_id,
-                "medicine_id": medicine_object_id,
+                "patient_id": patient_query,
+                "medicine_id": medicine_query,
                 "status": "active",
                 "remaining_quantity": {"$gte": quantity},
             },
@@ -176,7 +219,13 @@ async def execute_order(
         )
 
         if prescription_update.modified_count != 1:
-            await db.orders.delete_one({"_id": order_result.inserted_id})
+            if existing_pending:
+                await db.orders.update_one(
+                    {"_id": existing_pending["_id"]},
+                    {"$set": {"status": "rejected", "rejection_reason": "Prescription changed"}},
+                )
+            else:
+                await db.orders.delete_one({"_id": ObjectId(order_id)})
 
             await db.medicines.update_one(
                 {"_id": medicine_object_id},
@@ -188,8 +237,21 @@ async def execute_order(
                 detail="Prescription changed. Order cancelled.",
             )
 
+    await db.audit_logs.insert_one(
+        {
+            "event": "ORDER_EXECUTED",
+            "order_id": order_id,
+            "patient_id": str(patient_object_id),
+            "medicine_id": str(medicine_object_id),
+            "quantity": quantity,
+            "total_amount": total_amount,
+            "thread_id": thread_id,
+            "timestamp": datetime.now(timezone.utc),
+        }
+    )
+
     return {
-        "order_id": str(order_result.inserted_id),
+        "order_id": order_id,
         "patient_id": patient_id,
         "medicine_id": medicine_id,
         "medicine_name": medicine["name"],

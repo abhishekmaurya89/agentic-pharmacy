@@ -1,12 +1,9 @@
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from backend.app.agent.state import PharmacyState
-
-checkpointer_context = AsyncSqliteSaver.from_conn_string("langgraph_checkpoints.sqlite")
-
 from backend.app.agent.nodes import (
     assess_risk,
+    check_interactions_node,
     check_inventory_node,
     check_prescription_node,
     execute_order_node,
@@ -108,6 +105,7 @@ def build_pharmacy_graph():
     graph.add_node("check_inventory", check_inventory_node)
 
     graph.add_node("check_prescription", check_prescription_node)
+    graph.add_node("check_interactions", check_interactions_node)
 
     graph.add_node("prepare_order", prepare_order)
 
@@ -123,10 +121,8 @@ def build_pharmacy_graph():
 
     graph.add_node("assess_risk", assess_risk)
     graph.add_node("pharmacist_review", pharmacist_review)
-    # START
     graph.add_edge(START, "extract_intent")
 
-    # Intent
     graph.add_conditional_edges(
         "extract_intent",
         route_intent,
@@ -139,26 +135,25 @@ def build_pharmacy_graph():
         },
     )
 
-    # Medicine
     graph.add_conditional_edges(
         "resolve_medicine",
         route_medicine,
         {"continue": "check_inventory", "reject": "reject_order"},
     )
 
-    # Inventory
     graph.add_conditional_edges(
         "check_inventory",
         route_inventory,
         {"continue": "check_prescription", "reject": "reject_order"},
     )
 
-    # Prescription
     graph.add_conditional_edges(
         "check_prescription",
         route_prescription,
-        {"continue": "assess_risk", "reject": "reject_order"},
+        {"continue": "check_interactions", "reject": "reject_order"},
     )
+
+    graph.add_edge("check_interactions", "assess_risk")
 
     graph.add_conditional_edges(
         "assess_risk",

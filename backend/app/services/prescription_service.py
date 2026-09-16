@@ -6,20 +6,33 @@ from backend.app.db.mongodb import db
 from backend.app.services.inventory_service import get_medicine
 
 
-async def check_prescription(patient_id: str, medicine_id: str, quantity: int):
+async def check_prescription(patient_id: str, medicine_id: str, quantity: int | None):
+    if quantity is None:
+        return {"allowed": False, "reason": "QUANTITY_REQUIRED"}
+
     if quantity <= 0:
         return {"allowed": False, "reason": "INVALID_QUANTITY"}
 
     medicine = await get_medicine(medicine_id)
 
-    # OTC medicine does not require a prescription
-    if not medicine["prescription_required"]:
+    if not medicine.get("prescription_required"):
         return {"allowed": True, "reason": "PRESCRIPTION_NOT_REQUIRED"}
+
+    patient_query = (
+        {"$in": [patient_id, ObjectId(patient_id)]}
+        if ObjectId.is_valid(patient_id)
+        else patient_id
+    )
+    medicine_query = (
+        {"$in": [medicine_id, ObjectId(medicine_id)]}
+        if ObjectId.is_valid(medicine_id)
+        else medicine_id
+    )
 
     prescription = await db.prescriptions.find_one(
         {
-            "patient_id": patient_id,
-            "medicine_id": ObjectId(medicine_id),
+            "patient_id": patient_query,
+            "medicine_id": medicine_query,
             "status": "active",
         }
     )

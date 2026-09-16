@@ -35,6 +35,9 @@ async def connect_db():
         unique=True,
     )
 
+    await db.audit_logs.create_index([("timestamp", ASCENDING)])
+    await db.audit_logs.create_index([("thread_id", ASCENDING)])
+
     print("MongoDB connected")
 
 

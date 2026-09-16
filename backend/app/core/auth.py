@@ -42,3 +42,16 @@ async def get_current_user(
     user["id"] = str(user.pop("_id"))
 
     return user
+
+
+def require_roles(*allowed_roles: str):
+    async def role_dependency(current_user: dict = Depends(get_current_user)):
+        if current_user.get("role") not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access forbidden: requires one of {allowed_roles}",
+            )
+        return current_user
+
+    return role_dependency
+

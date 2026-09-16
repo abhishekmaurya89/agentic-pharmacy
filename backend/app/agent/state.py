@@ -11,6 +11,7 @@ class PharmacyState(TypedDict, total=False):
     medicine_name: str | None
     quantity: int | None
 
+    information_type: str | None
     clarification_needed: bool
     clarification_question: str | None
 
@@ -19,8 +20,8 @@ class PharmacyState(TypedDict, total=False):
 
     inventory_result: dict[str, Any] | None
     prescription_result: dict[str, Any] | None
+    interaction_result: dict[str, Any] | None
 
-    # Risk
     risk_level: str | None
     risk_score: int
     risk_reasons: list[str]
