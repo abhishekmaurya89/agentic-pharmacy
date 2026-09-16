@@ -1,86 +1,273 @@
-import { useEffect, useState } from "react";
-import { Send, LogOut, Bot, User, ShieldAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Send, LogOut, Bot, User, ShieldAlert, Pill, Bell, ChevronRight, X, Clock, TrendingUp, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-
-import {
-  sendAgentMessage,
-  confirmOrder,
-  getRefillPredictions,
-  getOrderStatus,
-} from "../api/agent";
-
+import { sendAgentMessage, confirmOrder, getRefillPredictions, getOrderStatus } from "../api/agent";
 import OrderConfirmation from "../components/OrderConfirmation";
+
+function TypingIndicator() {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "12px 16px" }}>
+      <div style={{
+        width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+        background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <Bot size={15} color="white" />
+      </div>
+      <div className="bubble-assistant" style={{ padding: "12px 16px", display: "flex", gap: 5, alignItems: "center" }}>
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+      </div>
+    </div>
+  );
+}
+
+function Message({ msg, index }) {
+  const isUser = msg.role === "user";
+  return (
+    <div
+      className="message-animate"
+      style={{
+        display: "flex",
+        flexDirection: isUser ? "row-reverse" : "row",
+        gap: 10,
+        alignItems: "flex-end",
+        animationDelay: `${Math.min(index * 0.05, 0.3)}s`,
+        opacity: 0,
+      }}
+    >
+      <div style={{
+        width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+        background: isUser
+          ? "rgba(255,255,255,0.1)"
+          : "linear-gradient(135deg, #3b82f6, #6366f1)",
+        border: isUser ? "1px solid rgba(255,255,255,0.1)" : "none",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        boxShadow: isUser ? "none" : "0 4px 12px rgba(59,130,246,0.3)",
+      }}>
+        {isUser ? <User size={15} color="#8b9bb4" /> : <Bot size={15} color="white" />}
+      </div>
+      <div
+        className={isUser ? "bubble-user" : "bubble-assistant"}
+        style={{
+          maxWidth: "72%", padding: "12px 16px",
+          fontSize: 14.5, lineHeight: 1.6, whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {msg.content}
+      </div>
+    </div>
+  );
+}
+
+function RefillCard({ prediction, onQuickRefill }) {
+  const days = Math.max(prediction.days_until_refill, 0);
+  const urgent = days <= 3;
+  return (
+    <div style={{
+      background: urgent ? "rgba(244,63,94,0.07)" : "rgba(59,130,246,0.07)",
+      border: `1px solid ${urgent ? "rgba(244,63,94,0.2)" : "rgba(59,130,246,0.15)"}`,
+      borderRadius: 14, padding: "14px 18px",
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 10,
+          background: urgent ? "rgba(244,63,94,0.15)" : "rgba(59,130,246,0.15)",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <Pill size={18} color={urgent ? "#fb7185" : "#60a5fa"} />
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, color: "#f0f4ff" }}>
+            {prediction.medicine_name}
+            {prediction.strength && ` ${prediction.strength}`}
+          </div>
+          <div style={{ fontSize: 12, color: "#8b9bb4", marginTop: 2 }}>
+            <Clock size={11} style={{ display: "inline", marginRight: 4 }} />
+            Refill in {days} day{days !== 1 ? "s" : ""} · Every ~{prediction.average_interval_days}d
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          textAlign: "center", minWidth: 44,
+        }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: urgent ? "#fb7185" : "#60a5fa" }}>
+            {days}
+          </div>
+          <div style={{ fontSize: 10, color: "#4a5568", fontWeight: 500 }}>DAYS</div>
+        </div>
+        <button
+          onClick={() => onQuickRefill(prediction.medicine_name)}
+          style={{
+            background: urgent ? "rgba(244,63,94,0.15)" : "rgba(59,130,246,0.15)",
+            border: `1px solid ${urgent ? "rgba(244,63,94,0.25)" : "rgba(59,130,246,0.25)"}`,
+            borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600,
+            color: urgent ? "#fb7185" : "#60a5fa", cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+          }}
+        >
+          Refill <ChevronRight size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PharmacistReviewBanner({ review, onDismiss }) {
+  return (
+    <div style={{
+      background: "rgba(249,115,22,0.08)",
+      border: "1px solid rgba(249,115,22,0.25)",
+      borderRadius: 16, padding: "18px 20px",
+      marginLeft: 42,
+      maxWidth: 400,
+    }} className="message-animate">
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: "rgba(249,115,22,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <ShieldAlert size={18} color="#fb923c" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#fed7aa" }}>
+              Pharmacist Review Required
+            </div>
+            <div style={{ fontSize: 12, color: "#9a6240", marginTop: 1 }}>
+              Your order is under safety review
+            </div>
+          </div>
+        </div>
+        {onDismiss && (
+          <button onClick={onDismiss} style={{ background: "none", border: "none", cursor: "pointer", color: "#9a6240", padding: 0 }}>
+            <X size={16} />
+          </button>
+        )}
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: "12px 14px", fontSize: 13 }}>
+        {[
+          ["Medicine", `${review.medicine}${review.strength ? ` ${review.strength}` : ""}`],
+          ["Quantity", review.quantity],
+          ["Risk Level", review.risk_level],
+        ].map(([k, v]) => (
+          <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ color: "#8b9bb4" }}>{k}</span>
+            <span style={{
+              fontWeight: 600,
+              color: k === "Risk Level" ? "#fb923c" : "#f0f4ff",
+            }}>{v}</span>
+          </div>
+        ))}
+        {review.risk_reasons?.length > 0 && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10, marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: "#8b9bb4", marginBottom: 6 }}>Risk factors:</div>
+            {review.risk_reasons.map((r, i) => (
+              <div key={i} style={{ fontSize: 12, color: "#fb923c", marginBottom: 3 }}>
+                · {r}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        marginTop: 12, display: "flex", alignItems: "center", gap: 8,
+        background: "rgba(249,115,22,0.1)", borderRadius: 8, padding: "8px 12px",
+      }}>
+        <div style={{
+          width: 8, height: 8, borderRadius: "50%", background: "#fb923c",
+          animation: "pulse-blink 1.5s ease-in-out infinite", flexShrink: 0,
+        }} />
+        <span style={{ fontSize: 12, color: "#fb923c", fontWeight: 500 }}>
+          Awaiting pharmacist review · Auto-refreshing
+        </span>
+      </div>
+      <style>{`
+        @keyframes pulse-blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+const QUICK_ACTIONS = [
+  "Order Paracetamol 500mg",
+  "What are the side effects of Metformin?",
+  "I need to refill my blood pressure medication",
+  "Order Amoxicillin 250mg - 10 tablets",
+];
 
 export default function PatientDashboard() {
   const navigate = useNavigate();
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   const [message, setMessage] = useState("");
-
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: "Hello! I’m your pharmacy assistant. How can I help you today?",
+      content: "Hello! I'm MedPilot, your AI pharmacy assistant. 👋\n\nI can help you:\n• Order medications\n• Get medicine information\n• Manage your refills\n\nHow can I help you today?",
     },
   ]);
 
   const [refillPredictions, setRefillPredictions] = useState([]);
   const [refillLoading, setRefillLoading] = useState(true);
-
   const [pendingOrder, setPendingOrder] = useState(null);
   const [pharmacistReview, setPharmacistReview] = useState(null);
-
   const [threadId, setThreadId] = useState(null);
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    const loadRefillPredictions = async () => {
+    scrollToBottom();
+  }, [messages, pendingOrder, pharmacistReview, sending]);
+
+  useEffect(() => {
+    const load = async () => {
       try {
         const data = await getRefillPredictions();
-
         setRefillPredictions(data.predictions || []);
-      } catch (error) {
-        console.error("Failed to load refill predictions:", error);
+      } catch {
+        /* ignore */
       } finally {
         setRefillLoading(false);
       }
     };
-
-    loadRefillPredictions();
+    load();
   }, []);
 
   useEffect(() => {
-    if (!pharmacistReview?.thread_id) {
-      return;
-    }
-
-    const checkStatus = async () => {
+    if (!pharmacistReview?.thread_id) return;
+    const check = async () => {
       try {
         const status = await getOrderStatus(pharmacistReview.thread_id);
-
-        console.log("ORDER STATUS:", status);
-
-        const normalizedStatus = status?.status?.toLowerCase();
-
-        if (
-          normalizedStatus === "approved" ||
-          normalizedStatus === "confirmed"
-        ) {
+        const s = status?.status?.toLowerCase();
+        if (s === "approved" || s === "confirmed") {
           setMessages((prev) => [
             ...prev,
             {
               role: "assistant",
               content: status.order_id
-                ? `✅ Your order has been approved by the pharmacist and confirmed.\n\nOrder ID: ${status.order_id}`
-                : "✅ Your order has been approved by the pharmacist and confirmed.",
+                ? `✅ Your order has been approved by the pharmacist!\n\nOrder ID: ${status.order_id}\nMedicine: ${status.medicine_name}\nQuantity: ${status.quantity}\nTotal: ₹${status.total_amount?.toFixed(2)}`
+                : "✅ Your order has been approved by the pharmacist and is being processed.",
             },
           ]);
-
           setPharmacistReview(null);
-          return;
-        }
-
-        if (normalizedStatus === "rejected") {
+        } else if (s === "rejected") {
           setMessages((prev) => [
             ...prev,
             {
@@ -90,21 +277,13 @@ export default function PatientDashboard() {
                 : "❌ Your order was rejected by the pharmacist.",
             },
           ]);
-
           setPharmacistReview(null);
         }
-      } catch (error) {
-        console.error("Status check failed:", error);
-      }
+      } catch { /* ignore */ }
     };
-
-    checkStatus();
-
-    const interval = setInterval(checkStatus, 5000);
-
-    return () => {
-      clearInterval(interval);
-    };
+    check();
+    const interval = setInterval(check, 5000);
+    return () => clearInterval(interval);
   }, [pharmacistReview]);
 
   const handleLogout = () => {
@@ -112,323 +291,281 @@ export default function PatientDashboard() {
     navigate("/login");
   };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-
-    if (!message.trim() || sending) {
-      return;
-    }
-
-    const userMessage = message.trim();
-
+  const sendMessage = async (text) => {
+    if (!text.trim() || sending) return;
+    const userMessage = text.trim();
     setMessage("");
     setSending(true);
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "user",
-        content: userMessage,
-      },
-    ]);
+    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
 
     try {
       const data = await sendAgentMessage(userMessage, threadId);
-
-      console.log("AGENT RESPONSE:", data);
-
-      if (data.thread_id) {
-        setThreadId(data.thread_id);
-      }
+      if (data.thread_id) setThreadId(data.thread_id);
 
       if (data.response) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: data.response,
-          },
-        ]);
+        setMessages((prev) => [...prev, { role: "assistant", content: data.response }]);
       }
 
-      if (data.interrupt && data.interrupt.type === "order_confirmation") {
+      if (data.interrupt?.type === "order_confirmation") {
         setThreadId(data.thread_id);
         setPendingOrder(data.interrupt);
         setPharmacistReview(null);
       }
 
-      if (data.interrupt && data.interrupt.type === "pharmacist_review") {
-        setPharmacistReview({
-          ...data.interrupt,
-          thread_id: data.thread_id,
-        });
-
+      if (data.interrupt?.type === "pharmacist_review") {
+        setPharmacistReview({ ...data.interrupt, thread_id: data.thread_id });
         setPendingOrder(null);
       }
     } catch (error) {
-      console.error(error);
-
       const detail = error.response?.data?.detail;
-
-      const errorMessage = Array.isArray(detail)
-        ? detail.map((item) => item.msg).join(", ")
+      const msg = Array.isArray(detail)
+        ? detail.map((i) => i.msg).join(", ")
         : typeof detail === "string"
           ? detail
-          : "Something went wrong while contacting the pharmacy system.";
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: errorMessage,
-        },
-      ]);
+          : "Something went wrong. Please try again.";
+      setMessages((prev) => [...prev, { role: "assistant", content: `❗ ${msg}` }]);
     } finally {
       setSending(false);
     }
   };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    sendMessage(message);
+  };
+
   const handleApproval = async (confirmed) => {
-    if (!threadId || approvalLoading) {
-      return;
-    }
-
+    if (!threadId || approvalLoading) return;
     setApprovalLoading(true);
-
     try {
       const data = await confirmOrder(threadId, confirmed);
-
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content:
-            data.response ||
-            (confirmed ? "Order confirmed." : "Order cancelled."),
-        },
+        { role: "assistant", content: data.response || (confirmed ? "✅ Order confirmed!" : "❌ Order cancelled.") },
       ]);
-
       setPendingOrder(null);
-      setThreadId(null);
+      if (confirmed) setThreadId(null);
     } catch (error) {
-      console.error(error);
-
       const detail = error.response?.data?.detail;
-
-      const errorMessage = Array.isArray(detail)
-        ? detail.map((item) => item.msg).join(", ")
-        : typeof detail === "string"
-          ? detail
-          : "Unable to process the order.";
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: errorMessage,
-        },
-      ]);
+      const msg = Array.isArray(detail) ? detail.map((i) => i.msg).join(", ") : typeof detail === "string" ? detail : "Unable to process the order.";
+      setMessages((prev) => [...prev, { role: "assistant", content: `❗ ${msg}` }]);
     } finally {
       setApprovalLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <h1 className="text-xl font-bold">MedPilot</h1>
+  const handleQuickRefill = (medicineName) => {
+    sendMessage(`I need to refill my ${medicineName}`);
+  };
 
-            <p className="text-sm text-gray-500">AI Pharmacy Assistant</p>
+  const hasRefills = !refillLoading && refillPredictions.length > 0;
+
+  return (
+    <div className="animated-bg" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <header style={{
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        background: "rgba(10,15,30,0.8)",
+        backdropFilter: "blur(20px)",
+        position: "sticky", top: 0, zIndex: 50,
+      }}>
+        <div style={{
+          maxWidth: 1200, margin: "0 auto", padding: "0 24px",
+          display: "flex", alignItems: "center", justifyContent: "space-between", height: 60,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10,
+              background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 4px 12px rgba(59,130,246,0.3)",
+            }}>
+              <Pill size={17} color="white" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#f0f4ff" }}>MedPilot</div>
+              <div style={{ fontSize: 11, color: "#4a5568", marginTop: -2 }}>AI Pharmacy Assistant</div>
+            </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-100"
-          >
-            <LogOut size={17} />
-            Logout
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {hasRefills && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)",
+                borderRadius: 8, padding: "5px 10px", fontSize: 12, color: "#60a5fa", fontWeight: 500,
+              }}>
+                <Bell size={13} />
+                {refillPredictions.length} refill{refillPredictions.length > 1 ? "s" : ""} due
+              </div>
+            )}
+            <button
+              id="logout-btn"
+              onClick={handleLogout}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 8, padding: "7px 14px", fontSize: 13, color: "#8b9bb4",
+                cursor: "pointer", fontFamily: "inherit", fontWeight: 500,
+                transition: "all 0.2s",
+              }}
+            >
+              <LogOut size={15} />
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-4xl flex-col px-4 py-8">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold">Pharmacy Assistant</h2>
-
-          <p className="mt-1 text-gray-500">
-            Ask me to order or manage your medications.
-          </p>
-        </div>
-
-        {!refillLoading && refillPredictions.length > 0 && (
-          <div className="mb-6 space-y-3">
-            {refillPredictions.map((prediction) => (
-              <div
-                key={prediction.medicine_id}
-                className="rounded-2xl border bg-white p-5 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-blue-600">
-                      Refill Reminder
-                    </p>
-
-                    <h3 className="mt-1 text-lg font-semibold">
-                      {prediction.medicine_name}
-
-                      {prediction.strength && ` ${prediction.strength}`}
-                    </h3>
-
-                    <p className="mt-1 text-sm text-gray-500">
-                      Your usual refill interval is about{" "}
-                      {prediction.average_interval_days} days.
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-blue-50 px-3 py-2 text-center">
-                    <p className="text-2xl font-bold text-blue-600">
-                      {Math.max(prediction.days_until_refill, 0)}
-                    </p>
-
-                    <p className="text-xs text-blue-600">days</p>
-                  </div>
-                </div>
+      <div style={{ flex: 1, maxWidth: 1200, margin: "0 auto", width: "100%", padding: "24px", display: "flex", gap: 24 }}>
+        {hasRefills && (
+          <div style={{ width: 300, flexShrink: 0 }}>
+            <div style={{ position: "sticky", top: 84 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <TrendingUp size={16} color="#60a5fa" />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#8b9bb4", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                  Refill Reminders
+                </span>
               </div>
-            ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {refillPredictions.map((p) => (
+                  <RefillCard key={p.medicine_id} prediction={p} onQuickRefill={handleQuickRefill} />
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="min-h-[500px] rounded-2xl border bg-white shadow-sm">
-          <div className="space-y-5 p-6">
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex gap-3 ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                {msg.role === "assistant" && (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-                    <Bot size={18} />
-                  </div>
-                )}
-
-                <div
-                  className={`max-w-[75%] whitespace-pre-line rounded-2xl px-4 py-3 ${
-                    msg.role === "user"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-800"
-                  }`}
-                >
-                  {msg.content}
-                </div>
-
-                {msg.role === "user" && (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-200">
-                    <User size={18} />
-                  </div>
-                )}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <div style={{
+            flex: 1,
+            background: "rgba(255,255,255,0.02)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 20,
+            display: "flex", flexDirection: "column",
+            overflow: "hidden",
+            minHeight: "calc(100vh - 160px)",
+          }}>
+            <div style={{
+              padding: "16px 20px",
+              borderBottom: "1px solid rgba(255,255,255,0.06)",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: "50%",
+                background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 4px 12px rgba(59,130,246,0.3)",
+              }}>
+                <Sparkles size={16} color="white" />
               </div>
-            ))}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "#f0f4ff" }}>Pharmacy AI</div>
+                <div style={{ fontSize: 11, color: "#10b981", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
+                  Online · Ready to help
+                </div>
+              </div>
+            </div>
 
-            {pendingOrder && pendingOrder.type === "order_confirmation" && (
-              <div className="ml-12">
-                <OrderConfirmation
-                  order={pendingOrder}
-                  loading={approvalLoading}
-                  onConfirm={() => handleApproval(true)}
-                  onCancel={() => handleApproval(false)}
-                />
+            <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
+              {messages.map((msg, i) => (
+                <Message key={i} msg={msg} index={i} />
+              ))}
+
+              {sending && <TypingIndicator />}
+
+              {pendingOrder?.type === "order_confirmation" && (
+                <div style={{ marginLeft: 42 }}>
+                  <OrderConfirmation
+                    order={pendingOrder}
+                    loading={approvalLoading}
+                    onConfirm={() => handleApproval(true)}
+                    onCancel={() => handleApproval(false)}
+                  />
+                </div>
+              )}
+
+              {pharmacistReview?.type === "pharmacist_review" && (
+                <PharmacistReviewBanner review={pharmacistReview} />
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+
+            {messages.length === 1 && !sending && (
+              <div style={{ padding: "0 20px 16px" }}>
+                <div style={{ fontSize: 11, color: "#4a5568", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  Quick actions
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                  {QUICK_ACTIONS.map((qa) => (
+                    <button
+                      key={qa}
+                      onClick={() => sendMessage(qa)}
+                      style={{
+                        background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.15)",
+                        borderRadius: 8, padding: "6px 12px", fontSize: 12.5, color: "#60a5fa",
+                        cursor: "pointer", fontFamily: "inherit", fontWeight: 500,
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {qa}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
-            {pharmacistReview &&
-              pharmacistReview.type === "pharmacist_review" && (
-                <div className="ml-12 max-w-md rounded-2xl border border-orange-200 bg-orange-50 p-5">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
-                      <ShieldAlert size={21} />
-                    </div>
-
-                    <div>
-                      <h3 className="font-semibold text-orange-900">
-                        Pharmacist Review Required
-                      </h3>
-
-                      <p className="mt-1 text-sm text-orange-700">
-                        This medication request requires additional review
-                        before it can be processed.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-xl bg-white p-4 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Medicine</span>
-
-                      <span className="font-medium">
-                        {pharmacistReview.medicine}
-                      </span>
-                    </div>
-
-                    {pharmacistReview.strength && (
-                      <div className="mt-3 flex justify-between">
-                        <span className="text-gray-500">Strength</span>
-
-                        <span>{pharmacistReview.strength}</span>
-                      </div>
-                    )}
-
-                    <div className="mt-3 flex justify-between">
-                      <span className="text-gray-500">Quantity</span>
-
-                      <span>{pharmacistReview.quantity}</span>
-                    </div>
-
-                    <div className="mt-3 flex justify-between border-t pt-3">
-                      <span className="text-gray-500">Risk Level</span>
-
-                      <span className="font-medium text-orange-600">
-                        {pharmacistReview.risk_level}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-lg bg-orange-100 px-3 py-2 text-center text-sm font-medium text-orange-800">
-                    Awaiting pharmacist review
-                  </div>
-                </div>
-              )}
-          </div>
-
-          <form onSubmit={handleSend} className="border-t p-4">
-            <div className="flex gap-3">
+            <form
+              onSubmit={handleSend}
+              style={{
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+                padding: "14px 16px",
+                display: "flex", gap: 10, alignItems: "center",
+              }}
+            >
               <input
+                ref={inputRef}
+                id="chat-input"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 disabled={sending || !!pendingOrder || !!pharmacistReview}
                 placeholder={
                   pendingOrder
-                    ? "Please confirm or cancel the order above"
+                    ? "Please confirm or cancel your order above"
                     : pharmacistReview
-                      ? "Waiting for pharmacist review"
-                      : "I need 10 paracetamol tablets..."
+                      ? "Waiting for pharmacist review..."
+                      : "Ask me about medications, order, or refill..."
                 }
-                className="flex-1 rounded-xl border px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                className="input-dark"
+                style={{ flex: 1 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e);
+                  }
+                }}
               />
-
               <button
+                id="send-btn"
                 type="submit"
-                disabled={sending || !!pendingOrder || !!pharmacistReview}
-                className="flex items-center justify-center rounded-xl bg-blue-600 px-5 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={sending || !message.trim() || !!pendingOrder || !!pharmacistReview}
+                style={{
+                  width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                  background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+                  border: "none", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "0 4px 12px rgba(59,130,246,0.3)",
+                  opacity: sending || !message.trim() || !!pendingOrder || !!pharmacistReview ? 0.5 : 1,
+                  transition: "all 0.2s",
+                }}
               >
-                <Send size={19} />
+                <Send size={18} color="white" />
               </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
