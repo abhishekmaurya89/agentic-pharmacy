@@ -120,6 +120,29 @@ async def get_refill_predictions(patient_id: str):
     return predictions
 
 
+async def get_last_order_quantity(patient_id: str, medicine_id: str):
+    if not ObjectId.is_valid(patient_id) or not ObjectId.is_valid(medicine_id):
+        return None
+
+    order = await db.orders.find_one(
+        {
+            "patient_id": ObjectId(patient_id),
+            "status": "confirmed",
+            "items.medicine_id": ObjectId(medicine_id),
+        },
+        sort=[("created_at", -1)],
+    )
+
+    if not order:
+        return None
+
+    for item in order.get("items", []):
+        if str(item.get("medicine_id")) == medicine_id:
+            return item.get("quantity")
+
+    return None
+
+
 async def generate_refill_alert(
     patient_id: str,
 ):

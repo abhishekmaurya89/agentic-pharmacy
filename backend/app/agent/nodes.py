@@ -6,13 +6,17 @@ from backend.app.agent.llm import (
 )
 from backend.app.agent.state import PharmacyState
 from backend.app.services.interaction_service import check_drug_interactions
-from backend.app.services.inventory_service import check_inventory, search_medicines
+from backend.app.services.inventory_service import (
+    check_inventory,
+    search_medicines,
+    search_medicines_by_keyword,
+)
 from backend.app.services.order_service import (
     create_pending_order,
     execute_order,
-    update_pending_order_status,
 )
 from backend.app.services.pharmacist_service import create_pharmacist_review
+from backend.app.services.refill_service import get_last_order_quantity
 from backend.app.services.risk_service import calculate_order_risk
 
 
@@ -173,16 +177,44 @@ async def refill_request(state: PharmacyState) -> PharmacyState:
     if not medicine_name:
         return {
             **state,
-            "response": "Which medicine would you like to refill?",
+            "response": "Which specific medicine would you like to refill? For example, you can say: refill my Losartan.",
+            "order_ready": False,
+        }
+
+    medicines = await search_medicines(medicine_name)
+    if not medicines:
+        medicines = await search_medicines_by_keyword(medicine_name)
+
+    if not medicines:
+        return {
+            **state,
+            "response": f"I couldn't find a medicine matching '{medicine_name}'. Please specify the medicine name.",
+            "order_ready": False,
+        }
+
+    if len(medicines) > 1:
+        names = [f"{m['name']} {m.get('strength', '')}".strip() for m in medicines[:5]]
+        return {
+            **state,
+            "response": "Please specify which medicine to refill: " + ", ".join(names),
+            "order_ready": False,
+        }
+
+    medicine = medicines[0]
+    quantity = await get_last_order_quantity(state["user_id"], medicine["id"])
+    if not quantity:
+        return {
+            **state,
+            "response": f"I found {medicine['name']}, but there is no previous confirmed order to determine the refill quantity. Please place a new order with the quantity.",
             "order_ready": False,
         }
 
     return {
         **state,
-        "response": (
-            f"I can help with a refill for {medicine_name}. "
-            "I’ll check your prescription and refill eligibility next."
-        ),
+        "medicine_id": medicine["id"],
+        "medicine": medicine,
+        "quantity": quantity,
+        "response": f"I found your previous {medicine['name']} refill quantity of {quantity}. I’ll validate availability and prescription eligibility now.",
     }
 
 
@@ -198,6 +230,9 @@ async def resolve_medicine(state: PharmacyState) -> PharmacyState:
         }
 
     medicines = await search_medicines(medicine_name)
+
+    if not medicines:
+        medicines = await search_medicines_by_keyword(medicine_name)
 
     if not medicines:
         return {

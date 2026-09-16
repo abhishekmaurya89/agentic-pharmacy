@@ -9,7 +9,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/register")
 async def register(user: UserCreate):
     return await register_user(
-        name=user.name, email=user.email, password=user.password, role=user.role
+        name=user.name, email=user.email, password=user.password, role="patient"
     )
 
 

@@ -1,6 +1,5 @@
 from langgraph.graph import END, START, StateGraph
 
-from backend.app.agent.state import PharmacyState
 from backend.app.agent.nodes import (
     assess_risk,
     check_interactions_node,
@@ -18,6 +17,7 @@ from backend.app.agent.nodes import (
     resolve_medicine,
     unknown_request,
 )
+from backend.app.agent.state import PharmacyState
 
 
 def route_risk(state: PharmacyState):
@@ -63,6 +63,12 @@ def route_medicine(state: PharmacyState):
         return "reject"
 
     return "continue"
+
+
+def route_refill(state: PharmacyState):
+    if state.get("medicine_id") and state.get("quantity"):
+        return "continue"
+    return "reject"
 
 
 def route_inventory(state: PharmacyState):
@@ -142,6 +148,12 @@ def build_pharmacy_graph():
     )
 
     graph.add_conditional_edges(
+        "refill_request",
+        route_refill,
+        {"continue": "check_inventory", "reject": END},
+    )
+
+    graph.add_conditional_edges(
         "check_inventory",
         route_inventory,
         {"continue": "check_prescription", "reject": "reject_order"},
@@ -179,7 +191,7 @@ def build_pharmacy_graph():
     graph.add_conditional_edges(
         "pharmacist_review",
         route_pharmacist,
-        {"execute": "execute_order", "reject": END},
+        {"execute": "prepare_order", "reject": END},
     )
 
     graph.add_edge("reject_order", END)

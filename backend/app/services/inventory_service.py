@@ -1,3 +1,5 @@
+import re
+
 from bson import ObjectId
 from fastapi import HTTPException
 
@@ -39,10 +41,75 @@ async def get_medicine(medicine_id: str):
 
 
 async def search_medicines(name: str):
-    cursor = db.medicines.find({"name": {"$regex": name, "$options": "i"}})
+    normalized_name = " ".join(name.split()).strip()
+    cursor = db.medicines.find(
+        {"name": {"$regex": re.escape(normalized_name), "$options": "i"}}
+    )
 
     medicines = []
 
+    async for medicine in cursor:
+        medicine["id"] = str(medicine.pop("_id"))
+        medicines.append(medicine)
+
+    if not medicines:
+        base_name = re.sub(
+            r"\s+\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|iu|%)$",
+            "",
+            normalized_name,
+            flags=re.IGNORECASE,
+        ).strip()
+        if base_name != normalized_name:
+            cursor = db.medicines.find(
+                {"name": {"$regex": f"^{re.escape(base_name)}$", "$options": "i"}}
+            )
+            async for medicine in cursor:
+                medicine["id"] = str(medicine.pop("_id"))
+                medicines.append(medicine)
+
+    return medicines
+
+
+async def search_medicines_by_keyword(keyword: str):
+    ignored_words = {
+        "a",
+        "an",
+        "the",
+        "my",
+        "medicine",
+        "medication",
+        "drug",
+        "for",
+        "i",
+        "need",
+        "want",
+        "to",
+        "order",
+        "refill",
+    }
+    keywords = [
+        word
+        for word in re.findall(r"[a-z0-9]+", keyword.lower())
+        if word not in ignored_words
+    ]
+    if not keywords:
+        return []
+
+    cursor = db.medicines.find(
+        {
+            "$and": [
+                {
+                    "$or": [
+                        {field: {"$regex": re.escape(keyword), "$options": "i"}}
+                        for field in ("name", "uses", "description")
+                    ]
+                }
+                for keyword in keywords
+            ]
+        }
+    )
+
+    medicines = []
     async for medicine in cursor:
         medicine["id"] = str(medicine.pop("_id"))
         medicines.append(medicine)
