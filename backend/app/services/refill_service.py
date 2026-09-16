@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 
@@ -87,6 +87,14 @@ async def get_refill_predictions(patient_id: str):
 
         latest_order = orders_for_medicine[-1]
 
+        medicine_name = latest_order.get("medicine_name")
+        if not medicine_name and ObjectId.is_valid(medicine_id):
+            medicine = await db.medicines.find_one({"_id": ObjectId(medicine_id)})
+            medicine_name = medicine.get("name") if medicine else None
+
+        if not medicine_name:
+            continue
+
         latest_date = latest_order["created_at"]
 
         if latest_date.tzinfo is None:
@@ -100,7 +108,7 @@ async def get_refill_predictions(patient_id: str):
             predictions.append(
                 {
                     "medicine_id": medicine_id,
-                    "medicine_name": latest_order.get("medicine_name"),
+                    "medicine_name": medicine_name,
                     "strength": latest_order.get("strength"),
                     "last_quantity": latest_order.get("quantity"),
                     "average_interval_days": round(average_interval),

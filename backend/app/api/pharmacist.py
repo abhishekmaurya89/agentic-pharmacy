@@ -1,13 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from backend.app.core.auth import get_current_user, require_roles
+from backend.app.core.auth import require_roles
 from backend.app.services.order_service import update_pending_order_status
 from backend.app.services.pharmacist_service import (
     get_pending_reviews,
     get_review_by_thread_id,
     update_pharmacist_review,
+)
+from backend.app.services.prescription_upload_service import (
+    get_pending_prescription_uploads,
+    get_prescription_file,
+    review_prescription_upload,
 )
 
 router = APIRouter(
@@ -19,6 +24,12 @@ router = APIRouter(
 class PharmacistReviewRequest(BaseModel):
     thread_id: str
     approved: bool
+    rejection_reason: str | None = None
+
+
+class PrescriptionReviewRequest(BaseModel):
+    approved: bool
+    quantity_allowed: int | None = None
     rejection_reason: str | None = None
 
 
@@ -36,6 +47,41 @@ async def pending_reviews(
     current_user: dict = Depends(require_roles("pharmacist")),
 ):
     return await get_pending_reviews()
+
+
+@router.get("/prescriptions/pending")
+async def pending_prescription_uploads(
+    current_user: dict = Depends(require_roles("pharmacist")),
+):
+    return await get_pending_prescription_uploads()
+
+
+@router.post("/prescriptions/{upload_id}/review")
+async def review_prescription(
+    upload_id: str,
+    body: PrescriptionReviewRequest,
+    current_user: dict = Depends(require_roles("pharmacist")),
+):
+    return await review_prescription_upload(
+        upload_id=upload_id,
+        pharmacist_id=current_user["id"],
+        approved=body.approved,
+        quantity_allowed=body.quantity_allowed,
+        rejection_reason=body.rejection_reason,
+    )
+
+
+@router.get("/prescriptions/{upload_id}/file")
+async def prescription_file(
+    upload_id: str,
+    current_user: dict = Depends(require_roles("pharmacist")),
+):
+    content, content_type, filename = await get_prescription_file(upload_id)
+    return Response(
+        content=bytes(content),
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.post("/review")

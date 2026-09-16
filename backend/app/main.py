@@ -12,6 +12,7 @@ from backend.app.api.auth import router as auth_router
 from backend.app.api.medicines import router as medicine_router
 from backend.app.api.orders import router as order_router
 from backend.app.api.pharmacist import router as pharmacist_router
+from backend.app.api.prescriptions import router as prescription_router
 from backend.app.api.refills import router as refill_router
 from backend.app.config import settings
 from backend.app.db.mongodb import close_db, connect_db
@@ -77,6 +78,8 @@ app.include_router(auth_router)
 app.include_router(agent_router)
 
 app.include_router(refill_router)
+
+app.include_router(prescription_router)
 
 # Health
 

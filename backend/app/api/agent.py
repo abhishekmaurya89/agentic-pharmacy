@@ -70,6 +70,12 @@ async def confirm_order(
             "pharmacist_id": current_user["id"],
         }
     else:
+        snapshot = await request.app.state.pharmacy_graph.aget_state(
+            {"configurable": {"thread_id": thread_id}}
+        )
+        state_user_id = snapshot.values.get("user_id") if snapshot.values else None
+        if state_user_id != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         resume_data = {"confirmed": confirmed}
 
     graph = request.app.state.pharmacy_graph
