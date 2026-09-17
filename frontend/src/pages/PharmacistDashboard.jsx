@@ -347,6 +347,17 @@ export default function PharmacistDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [stats, setStats] = useState({ approved: 0, rejected: 0 });
   const [prescriptionUploads, setPrescriptionUploads] = useState([]);
+  const [medicines, setMedicines] = useState([]);
+  const [activeSection, setActiveSection] = useState("overview");
+  const [showAddMedicine, setShowAddMedicine] = useState(false);
+  const [medicineForm, setMedicineForm] = useState({
+    name: "",
+    strength: "",
+    form: "",
+    stock: 0,
+    prescription_required: false,
+    unit_price: 0,
+  });
 
   const getToken = () => localStorage.getItem("access_token");
 
@@ -367,17 +378,62 @@ export default function PharmacistDashboard() {
       if (showLoader) setLoading(true);
       setError("");
       const headers = { Authorization: `Bearer ${getToken()}` };
-      const [reviewsResponse, prescriptionsResponse] = await Promise.all([
-        API.get("/pharmacist/pending", { headers }),
-        API.get("/pharmacist/prescriptions/pending", { headers }),
-      ]);
+      const [reviewsResponse, prescriptionsResponse, medicinesResponse] =
+        await Promise.all([
+          API.get("/pharmacist/pending", { headers }),
+          API.get("/pharmacist/prescriptions/pending", { headers }),
+          API.get("/medicines/search", {
+            headers,
+            params: { name: "" },
+          }),
+        ]);
       setReviews(reviewsResponse.data);
       setPrescriptionUploads(prescriptionsResponse.data);
+      setMedicines(medicinesResponse.data || []);
       setLastUpdated(new Date());
     } catch (err) {
       setError(getErrorMessage(err, "Unable to load pending reviews."));
     } finally {
       if (showLoader) setLoading(false);
+    }
+  };
+
+  const handleAddMedicine = async (e) => {
+    e.preventDefault();
+    if (!medicineForm.name.trim()) {
+      setError("Medicine name is required.");
+      return;
+    }
+
+    try {
+      setError("");
+      const payload = {
+        name: medicineForm.name.trim(),
+        strength: medicineForm.strength?.trim() || null,
+        form: medicineForm.form?.trim() || null,
+        stock: Number(medicineForm.stock) || 0,
+        prescription_required: Boolean(medicineForm.prescription_required),
+        unit_price: Number(medicineForm.unit_price) || 0,
+      };
+
+      const response = await API.post("/medicines/", payload, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+
+      setMedicines((prev) => [response.data, ...prev]);
+      setMedicineForm({
+        name: "",
+        strength: "",
+        form: "",
+        stock: 0,
+        prescription_required: false,
+        unit_price: 0,
+      });
+      setShowAddMedicine(false);
+      setSuccess(`✅ ${payload.name} added to inventory.`);
+      setTimeout(() => setSuccess(""), 4000);
+    } catch (err) {
+      setError(getErrorMessage(err, "Unable to add medicine."));
     }
   };
 
@@ -469,6 +525,37 @@ export default function PharmacistDashboard() {
     { label: "Pending", value: reviews.length, color: "#f97316", icon: Clock },
     { label: "Approved", value: stats.approved, color: "#10b981", icon: Check },
     { label: "Rejected", value: stats.rejected, color: "#f43f5e", icon: X },
+  ];
+
+  const overviewSections = [
+    {
+      title: "Inventory",
+      value: `${medicines.length} items`,
+      description: "Active medicine catalog",
+      color: "#8b5cf6",
+      icon: Pill,
+    },
+    {
+      title: "Review queue",
+      value: `${reviews.length} pending`,
+      description: "Medication approvals",
+      color: "#f59e0b",
+      icon: Activity,
+    },
+    {
+      title: "Prescriptions",
+      value: `${prescriptionUploads.length} files`,
+      description: "Verification needed",
+      color: "#22c55e",
+      icon: Users,
+    },
+  ];
+
+  const navItems = [
+    { id: "overview", label: "Overview", icon: Activity },
+    { id: "inventory", label: "Inventory", icon: Pill },
+    { id: "reviews", label: "Reviews", icon: Clock },
+    { id: "prescriptions", label: "Prescriptions", icon: Users },
   ];
 
   return (
@@ -584,284 +671,781 @@ export default function PharmacistDashboard() {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px" }}>
-        <div style={{ marginBottom: 28 }}>
-          <h1
-            style={{
-              fontSize: 26,
-              fontWeight: 800,
-              color: "#f0f4ff",
-              marginBottom: 6,
-            }}
-          >
-            Medication Review Queue
-          </h1>
-          <p style={{ color: "#8b9bb4", fontSize: 15 }}>
-            Review high-risk medication requests requiring pharmacist approval.
-          </p>
-        </div>
-
-        <div
+      <div
+        style={{
+          maxWidth: 1200,
+          width: "100%",
+          margin: "0 auto",
+          padding: "24px 24px 0",
+          display: "flex",
+          gap: 20,
+          flex: 1,
+        }}
+      >
+        <aside
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 14,
-            marginBottom: 28,
+            width: 220,
+            background: "rgba(15, 23, 42, 0.92)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 18,
+            padding: 14,
+            height: "fit-content",
+            position: "sticky",
+            top: 84,
           }}
         >
-          {sessionStats.map(({ label, value, color, icon: Icon }) => (
-            <div
-              key={label}
-              className="stat-card"
-              style={{ display: "flex", alignItems: "center", gap: 14 }}
-            >
-              <div
+          <div
+            style={{
+              fontSize: 11,
+              color: "#8b9bb4",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              margin: "6px 8px 12px",
+              fontWeight: 700,
+            }}
+          >
+            Menu
+          </div>
+          {navItems.map(({ id, label, icon: Icon }) => {
+            const active = activeSection === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveSection(id)}
                 style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  background: `${color}15`,
-                  border: `1px solid ${color}30`,
+                  width: "100%",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
+                  gap: 10,
+                  padding: "12px 12px",
+                  marginBottom: 8,
+                  borderRadius: 10,
+                  border: "1px solid transparent",
+                  background: active
+                    ? "rgba(99, 102, 241, 0.16)"
+                    : "transparent",
+                  color: active ? "#e0e7ff" : "#8b9bb4",
+                  fontWeight: active ? 700 : 500,
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                  textAlign: "left",
                 }}
               >
-                <Icon size={20} color={color} />
-              </div>
-              <div>
-                <div
-                  style={{ fontSize: 26, fontWeight: 800, color: "#f0f4ff" }}
-                >
-                  {value}
-                </div>
-                <div
-                  style={{ fontSize: 12, color: "#8b9bb4", fontWeight: 500 }}
-                >
-                  {label}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+                <Icon size={15} />
+                {label}
+              </button>
+            );
+          })}
+        </aside>
 
-        {success && (
-          <div
-            style={{
-              background: success.startsWith("✅")
-                ? "rgba(16,185,129,0.1)"
-                : "rgba(244,63,94,0.1)",
-              border: `1px solid ${success.startsWith("✅") ? "rgba(16,185,129,0.25)" : "rgba(244,63,94,0.25)"}`,
-              borderRadius: 12,
-              padding: "12px 16px",
-              marginBottom: 20,
-              fontSize: 14,
-              color: success.startsWith("✅") ? "#34d399" : "#fb7185",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>{success}</span>
-            <button
-              onClick={() => setSuccess("")}
+        <main style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ marginBottom: 28 }}>
+            <h1
               style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "inherit",
-                padding: 0,
-              }}
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
-
-        {error && (
-          <div
-            style={{
-              background: "rgba(244,63,94,0.1)",
-              border: "1px solid rgba(244,63,94,0.25)",
-              borderRadius: 12,
-              padding: "12px 16px",
-              marginBottom: 20,
-              fontSize: 14,
-              color: "#fb7185",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <ShieldAlert size={16} />
-              <span>{error}</span>
-            </div>
-            <button
-              onClick={() => setError("")}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "inherit",
-                padding: 0,
-              }}
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
-
-        {prescriptionUploads.length > 0 && (
-          <section style={{ marginBottom: 24 }}>
-            <h2 style={{ fontSize: 18, color: "#f0f4ff", marginBottom: 12 }}>
-              Prescription verification
-            </h2>
-            <div style={{ display: "grid", gap: 10 }}>
-              {prescriptionUploads.map((upload) => (
-                <div
-                  key={upload.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 14,
-                    padding: "14px 16px",
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: 12,
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ color: "#f0f4ff", fontWeight: 600 }}>
-                      {upload.filename}
-                    </div>
-                    <div
-                      style={{ color: "#8b9bb4", fontSize: 12, marginTop: 4 }}
-                    >
-                      Patient {upload.patient_id.slice(-8)} · Quantity{" "}
-                      {upload.quantity_allowed} · Valid until{" "}
-                      {new Date(upload.valid_until).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                    <button
-                      onClick={() => viewPrescription(upload)}
-                      style={{
-                        color: "#60a5fa",
-                        background: "rgba(59,130,246,0.1)",
-                        border: "1px solid rgba(59,130,246,0.25)",
-                        borderRadius: 8,
-                        padding: "8px 12px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => handlePrescriptionReview(upload, false)}
-                      style={{
-                        color: "#fb7185",
-                        background: "rgba(244,63,94,0.1)",
-                        border: "1px solid rgba(244,63,94,0.25)",
-                        borderRadius: 8,
-                        padding: "8px 12px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => handlePrescriptionReview(upload, true)}
-                      style={{
-                        color: "white",
-                        background: "#059669",
-                        border: 0,
-                        borderRadius: 8,
-                        padding: "8px 12px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Approve
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {loading && (
-          <div style={{ display: "grid", gap: 16 }}>
-            {[1, 2].map((i) => (
-              <div
-                key={i}
-                className="shimmer"
-                style={{
-                  height: 220,
-                  borderRadius: 18,
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-              />
-            ))}
-          </div>
-        )}
-
-        {!loading && reviews.length === 0 && (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "72px 24px",
-              background: "rgba(255,255,255,0.02)",
-              border: "1px solid rgba(255,255,255,0.07)",
-              borderRadius: 20,
-            }}
-          >
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                background: "rgba(16,185,129,0.15)",
-                border: "1px solid rgba(16,185,129,0.25)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 20px",
-              }}
-            >
-              <Check size={28} color="#34d399" />
-            </div>
-            <h3
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
+                fontSize: 26,
+                fontWeight: 800,
                 color: "#f0f4ff",
-                marginBottom: 8,
+                marginBottom: 6,
               }}
             >
-              All caught up!
-            </h3>
+              Medication Review Queue
+            </h1>
             <p style={{ color: "#8b9bb4", fontSize: 15 }}>
-              No pending medication reviews at this time.
+              Review high-risk medication requests requiring pharmacist
+              approval.
             </p>
           </div>
-        )}
 
-        {!loading && reviews.length > 0 && (
-          <div style={{ display: "grid", gap: 16 }}>
-            {reviews.map((review) => (
-              <ReviewCard
-                key={review._id}
-                review={review}
-                processingId={processingId}
-                onReview={handleReview}
-              />
-            ))}
-          </div>
-        )}
-      </main>
+          {success && (
+            <div
+              style={{
+                background: success.startsWith("✅")
+                  ? "rgba(16,185,129,0.1)"
+                  : "rgba(244,63,94,0.1)",
+                border: `1px solid ${success.startsWith("✅") ? "rgba(16,185,129,0.25)" : "rgba(244,63,94,0.25)"}`,
+                borderRadius: 12,
+                padding: "12px 16px",
+                marginBottom: 20,
+                fontSize: 14,
+                color: success.startsWith("✅") ? "#34d399" : "#fb7185",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>{success}</span>
+              <button
+                onClick={() => setSuccess("")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "inherit",
+                  padding: 0,
+                }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <div
+              style={{
+                background: "rgba(244,63,94,0.1)",
+                border: "1px solid rgba(244,63,94,0.25)",
+                borderRadius: 12,
+                padding: "12px 16px",
+                marginBottom: 20,
+                fontSize: 14,
+                color: "#fb7185",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <ShieldAlert size={16} />
+                <span>{error}</span>
+              </div>
+              <button
+                onClick={() => setError("")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "inherit",
+                  padding: 0,
+                }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+
+          {activeSection === "overview" && (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  marginBottom: 20,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowAddMedicine((prev) => !prev)}
+                  style={{
+                    background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "10px 16px",
+                    color: "white",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {showAddMedicine ? "Close form" : "+ Add medicine"}
+                </button>
+              </div>
+
+              {showAddMedicine && (
+                <section
+                  style={{
+                    marginBottom: 24,
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 16,
+                    padding: 16,
+                  }}
+                >
+                  <h2
+                    style={{ fontSize: 18, color: "#f0f4ff", marginBottom: 14 }}
+                  >
+                    Add medicine to inventory
+                  </h2>
+                  <form
+                    onSubmit={handleAddMedicine}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: 14,
+                    }}
+                  >
+                    <label style={{ color: "#8b9bb4", fontSize: 12 }}>
+                      Name
+                      <input
+                        value={medicineForm.name}
+                        onChange={(e) =>
+                          setMedicineForm((prev) => ({
+                            ...prev,
+                            name: e.target.value,
+                          }))
+                        }
+                        style={{
+                          width: "100%",
+                          marginTop: 6,
+                          background: "rgba(15, 23, 42, 0.8)",
+                          border: "1px solid rgba(255,255,255,0.09)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          color: "#f0f4ff",
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                        }}
+                        placeholder="Amoxicillin"
+                      />
+                    </label>
+                    <label style={{ color: "#8b9bb4", fontSize: 12 }}>
+                      Strength
+                      <input
+                        value={medicineForm.strength}
+                        onChange={(e) =>
+                          setMedicineForm((prev) => ({
+                            ...prev,
+                            strength: e.target.value,
+                          }))
+                        }
+                        style={{
+                          width: "100%",
+                          marginTop: 6,
+                          background: "rgba(15, 23, 42, 0.8)",
+                          border: "1px solid rgba(255,255,255,0.09)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          color: "#f0f4ff",
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                        }}
+                        placeholder="500 mg"
+                      />
+                    </label>
+                    <label style={{ color: "#8b9bb4", fontSize: 12 }}>
+                      Form
+                      <input
+                        value={medicineForm.form}
+                        onChange={(e) =>
+                          setMedicineForm((prev) => ({
+                            ...prev,
+                            form: e.target.value,
+                          }))
+                        }
+                        style={{
+                          width: "100%",
+                          marginTop: 6,
+                          background: "rgba(15, 23, 42, 0.8)",
+                          border: "1px solid rgba(255,255,255,0.09)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          color: "#f0f4ff",
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                        }}
+                        placeholder="Tablet"
+                      />
+                    </label>
+                    <label style={{ color: "#8b9bb4", fontSize: 12 }}>
+                      Stock
+                      <input
+                        type="number"
+                        min="0"
+                        value={medicineForm.stock}
+                        onChange={(e) =>
+                          setMedicineForm((prev) => ({
+                            ...prev,
+                            stock: e.target.value,
+                          }))
+                        }
+                        style={{
+                          width: "100%",
+                          marginTop: 6,
+                          background: "rgba(15, 23, 42, 0.8)",
+                          border: "1px solid rgba(255,255,255,0.09)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          color: "#f0f4ff",
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+                    <label style={{ color: "#8b9bb4", fontSize: 12 }}>
+                      Unit price
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={medicineForm.unit_price}
+                        onChange={(e) =>
+                          setMedicineForm((prev) => ({
+                            ...prev,
+                            unit_price: e.target.value,
+                          }))
+                        }
+                        style={{
+                          width: "100%",
+                          marginTop: 6,
+                          background: "rgba(15, 23, 42, 0.8)",
+                          border: "1px solid rgba(255,255,255,0.09)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          color: "#f0f4ff",
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+                    <label
+                      style={{
+                        color: "#8b9bb4",
+                        fontSize: 12,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        minHeight: 48,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={medicineForm.prescription_required}
+                        onChange={(e) =>
+                          setMedicineForm((prev) => ({
+                            ...prev,
+                            prescription_required: e.target.checked,
+                          }))
+                        }
+                      />
+                      Prescription required
+                    </label>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "end",
+                        gridColumn: "1 / -1",
+                      }}
+                    >
+                      <button
+                        type="submit"
+                        style={{
+                          background: "#10b981",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 10,
+                          padding: "10px 18px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Save medicine
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  gap: 14,
+                  marginBottom: 28,
+                }}
+              >
+                {overviewSections.map(
+                  ({ title, value, description, color, icon: Icon }) => (
+                    <div
+                      key={title}
+                      className="stat-card"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "18px 18px",
+                        minHeight: 96,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 12,
+                          background: `${color}20`,
+                          border: `1px solid ${color}40`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Icon size={20} color={color} />
+                      </div>
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#8b9bb4",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {title}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 24,
+                            fontWeight: 800,
+                            color: "#f0f4ff",
+                          }}
+                        >
+                          {value}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#8b9bb4" }}>
+                          {description}
+                        </div>
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </>
+          )}
+
+          {activeSection === "inventory" && (
+            <>
+              {medicines.length > 0 && (
+                <section style={{ marginBottom: 24 }}>
+                  <h2
+                    style={{ fontSize: 18, color: "#f0f4ff", marginBottom: 12 }}
+                  >
+                    Medicine inventory
+                  </h2>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {medicines.map((medicine) => (
+                      <div
+                        key={medicine.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 14,
+                          padding: "14px 16px",
+                          background: "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: 12,
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: "#f0f4ff", fontWeight: 600 }}>
+                            {medicine.name}
+                            {medicine.strength && (
+                              <span
+                                style={{ color: "#8b9bb4", fontWeight: 400 }}
+                              >
+                                {" "}
+                                {medicine.strength}
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              color: "#8b9bb4",
+                              fontSize: 12,
+                              marginTop: 4,
+                            }}
+                          >
+                            {medicine.form || "Form not specified"} · Stock{" "}
+                            {medicine.stock} ·
+                            {medicine.prescription_required
+                              ? " Prescription required"
+                              : " OTC"}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            color: "#a78bfa",
+                            fontWeight: 700,
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          ${Number(medicine.unit_price || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {medicines.length === 0 && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "72px 24px",
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.07)",
+                    borderRadius: 20,
+                  }}
+                >
+                  <h3
+                    style={{ fontSize: 20, fontWeight: 700, color: "#f0f4ff" }}
+                  >
+                    No medicines found
+                  </h3>
+                  <p style={{ color: "#8b9bb4", fontSize: 15 }}>
+                    Add a medicine to start building the inventory list.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeSection === "reviews" && (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: 14,
+                  marginBottom: 28,
+                }}
+              >
+                {sessionStats.map(({ label, value, color, icon: Icon }) => (
+                  <div
+                    key={label}
+                    className="stat-card"
+                    style={{ display: "flex", alignItems: "center", gap: 14 }}
+                  >
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        background: `${color}15`,
+                        border: `1px solid ${color}30`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon size={20} color={color} />
+                    </div>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 26,
+                          fontWeight: 800,
+                          color: "#f0f4ff",
+                        }}
+                      >
+                        {value}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#8b9bb4",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {label}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {loading && (
+                <div style={{ display: "grid", gap: 16 }}>
+                  {[1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="shimmer"
+                      style={{
+                        height: 220,
+                        borderRadius: 18,
+                        border: "1px solid rgba(255,255,255,0.06)",
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {!loading && reviews.length === 0 && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "72px 24px",
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.07)",
+                    borderRadius: 20,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: "50%",
+                      background: "rgba(16,185,129,0.15)",
+                      border: "1px solid rgba(16,185,129,0.25)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto 20px",
+                    }}
+                  >
+                    <Check size={28} color="#34d399" />
+                  </div>
+                  <h3
+                    style={{
+                      fontSize: 20,
+                      fontWeight: 700,
+                      color: "#f0f4ff",
+                      marginBottom: 8,
+                    }}
+                  >
+                    All caught up!
+                  </h3>
+                  <p style={{ color: "#8b9bb4", fontSize: 15 }}>
+                    No pending medication reviews at this time.
+                  </p>
+                </div>
+              )}
+
+              {!loading && reviews.length > 0 && (
+                <div style={{ display: "grid", gap: 16 }}>
+                  {reviews.map((review) => (
+                    <ReviewCard
+                      key={review._id}
+                      review={review}
+                      processingId={processingId}
+                      onReview={handleReview}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {activeSection === "prescriptions" && (
+            <>
+              {prescriptionUploads.length > 0 && (
+                <section style={{ marginBottom: 24 }}>
+                  <h2
+                    style={{ fontSize: 18, color: "#f0f4ff", marginBottom: 12 }}
+                  >
+                    Prescription verification
+                  </h2>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {prescriptionUploads.map((upload) => (
+                      <div
+                        key={upload.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 14,
+                          padding: "14px 16px",
+                          background: "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: 12,
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: "#f0f4ff", fontWeight: 600 }}>
+                            {upload.filename}
+                          </div>
+                          <div
+                            style={{
+                              color: "#8b9bb4",
+                              fontSize: 12,
+                              marginTop: 4,
+                            }}
+                          >
+                            Patient {upload.patient_id.slice(-8)} · Quantity{" "}
+                            {upload.quantity_allowed} · Valid until{" "}
+                            {new Date(upload.valid_until).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                          <button
+                            onClick={() => viewPrescription(upload)}
+                            style={{
+                              color: "#60a5fa",
+                              background: "rgba(59,130,246,0.1)",
+                              border: "1px solid rgba(59,130,246,0.25)",
+                              borderRadius: 8,
+                              padding: "8px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() =>
+                              handlePrescriptionReview(upload, false)
+                            }
+                            style={{
+                              color: "#fb7185",
+                              background: "rgba(244,63,94,0.1)",
+                              border: "1px solid rgba(244,63,94,0.25)",
+                              borderRadius: 8,
+                              padding: "8px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() =>
+                              handlePrescriptionReview(upload, true)
+                            }
+                            style={{
+                              color: "white",
+                              background: "#059669",
+                              border: 0,
+                              borderRadius: 8,
+                              padding: "8px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Approve
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {prescriptionUploads.length === 0 && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "72px 24px",
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.07)",
+                    borderRadius: 20,
+                  }}
+                >
+                  <h3
+                    style={{ fontSize: 20, fontWeight: 700, color: "#f0f4ff" }}
+                  >
+                    No prescription uploads
+                  </h3>
+                  <p style={{ color: "#8b9bb4", fontSize: 15 }}>
+                    There are no uploaded prescriptions awaiting review.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </main>
+      </div>
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }

@@ -22,9 +22,7 @@ async def chat(
     if not thread_id:
         thread_id = str(uuid.uuid4())
     else:
-        snapshot = await graph.aget_state(
-            {"configurable": {"thread_id": thread_id}}
-        )
+        snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
         state_user_id = snapshot.values.get("user_id") if snapshot.values else None
         if state_user_id and state_user_id != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
